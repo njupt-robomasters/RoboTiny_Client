@@ -63,10 +63,10 @@ def main():
     com.start()
     video.start()
 
-    ui.resize(1280, 720)
-    ui.showNormal()
+    # ui.resize(1280, 720)
+    # ui.showNormal()
     # ui.showMaximized()
-    # ui.showFullScreen()
+    ui.showFullScreen()
     ui.show_on_current_screen()
 
     timer = QtCore.QTimer()
