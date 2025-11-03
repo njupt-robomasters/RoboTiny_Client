@@ -6,6 +6,8 @@ from com import Com
 from video import Video
 from ui import UI
 
+FULL_SCREEN = True
+
 qt = QtWidgets.QApplication(sys.argv)
 com = Com()
 video = Video()
@@ -63,11 +65,13 @@ def main():
     com.start()
     video.start()
 
-    # ui.resize(1280, 720)
-    # ui.showNormal()
-    # ui.showMaximized()
-    ui.showFullScreen()
-    ui.show_on_current_screen()
+    if FULL_SCREEN:
+        ui.show_on_current_screen()
+        ui.showFullScreen()
+    else:
+        ui.resize(1280, 720)
+        ui.showNormal()
+        ui.show_on_current_screen()
 
     timer = QtCore.QTimer()
     timer.timeout.connect(update)

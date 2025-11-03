@@ -692,21 +692,23 @@ class UI(UIBase):
         if target.width() == 0 or target.height() == 0:
             return
 
-        # 缩放图像（保持宽高比，可能超出目标尺寸）
-        qimg_scaled = qimg.scaled(target, QtCore.Qt.KeepAspectRatioByExpanding, QtCore.Qt.SmoothTransformation)
+        # 缩放图像（保持宽高比，可能小于目标尺寸，空余部分填充黑色）
+        qimg_scaled = qimg.scaled(target, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
 
-        # 如果缩放后的尺寸大于目标尺寸，进行居中裁剪
-        if qimg_scaled.width() > target.width() or qimg_scaled.height() > target.height():
-            # 计算裁剪区域（居中）
-            x_offset = (qimg_scaled.width() - target.width()) // 2
-            y_offset = (qimg_scaled.height() - target.height()) // 2
+        # 创建与目标尺寸相同的黑色背景图像
+        final_image = QtGui.QImage(target.width(), target.height(), QtGui.QImage.Format_RGB888)
+        final_image.fill(QtCore.Qt.black)
 
-            # 复制中间部分
-            cropped_image = qimg_scaled.copy(x_offset, y_offset, target.width(), target.height())
-            self.bg_label.setPixmap(QtGui.QPixmap.fromImage(cropped_image))
-        else:
-            # 如果不需要裁剪，直接使用缩放后的图像
-            self.bg_label.setPixmap(QtGui.QPixmap.fromImage(qimg_scaled))
+        # 计算居中位置
+        x_offset = (target.width() - qimg_scaled.width()) // 2
+        y_offset = (target.height() - qimg_scaled.height()) // 2
+
+        # 在黑色背景上绘制居中后的缩放图像
+        painter = QtGui.QPainter(final_image)
+        painter.drawImage(x_offset, y_offset, qimg_scaled)
+        painter.end()
+
+        self.bg_label.setPixmap(QtGui.QPixmap.fromImage(final_image))
 
     def set_fps(self, fps):
         self.fps = fps
