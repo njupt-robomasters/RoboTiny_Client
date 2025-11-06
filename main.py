@@ -31,7 +31,6 @@ def update_com():
 
     # 更新血量
     if com.color == 'red':
-
         ui.set_red_hp(hp)
         ui.set_blue_hp(100)
     elif com.color == 'blue':

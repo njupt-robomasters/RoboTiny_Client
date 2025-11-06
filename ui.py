@@ -82,7 +82,7 @@ class HealthBar(QtWidgets.QFrame):  # 血条
         self.value = value
         self.update()
 
-    def set_team(self, team: str | None):
+    def set_color(self, team: str | None):
         self.team = team if team in ("red", "blue") else None
         self.update()
 
@@ -719,18 +719,18 @@ class UI(UIBase):
         self.countdown_banner.set_text(f"{m}:{s:02d}")
         self.countdown_banner.set_warning(seconds <= 10)
 
-    def set_color(self, side: str | None):
-        self._color = side if side in ("red", "blue") else None
-        self.self_bar.set_team(self._color)
+    def set_color(self, color: str | None):
+        self.color = color if color in ("red", "blue") else None
+        self.self_bar.set_color(self.color)
 
     def set_red_hp(self, hp: int | None):
         self.red_bar_top.set_value(hp)
-        if (self._color == "red"):
+        if self.color == "red":
             self.self_bar.set_value(hp)
 
     def set_blue_hp(self, hp: int | None):
-        self.red_bar_top.set_value(hp)
-        if (self._color == "blue"):
+        self.blue_bar_top.set_value(hp)
+        if self.color == "blue":
             self.self_bar.set_value(hp)
 
     def set_serial_status(self, is_connected, tx_rssi, rx_rssi):

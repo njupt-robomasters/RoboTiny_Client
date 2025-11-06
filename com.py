@@ -33,7 +33,7 @@ class Com(threading.Thread):
 
         self.logger.info(f"串口变更: {self.port} -> {port}")
         self.port = port
-        
+
         self._reset_data()
 
         if self.serial:
@@ -91,32 +91,35 @@ class Com(threading.Thread):
 
         self.logger.debug(f"串口读到数据: {line}")
 
-        parts = line.split(',')
-        if len(parts) == 5:
-            color = int(parts[0])
-            if color == self.RED:
-                self.color = "red"
-            elif color == self.BLUE:
-                self.color = "blue"
-            else:
-                self.color = None
+        try:
+            parts = line.split(',')
+            if len(parts) == 5:
+                color = int(parts[0])
+                if color == self.RED:
+                    self.color = "red"
+                elif color == self.BLUE:
+                    self.color = "blue"
+                else:
+                    self.color = None
 
-            self.hit_cnt = int(parts[1])
-            self.tx_rssi = self._filter(self.tx_rssi, int(parts[2]))
-            self.rx_rssi = self._filter(self.rx_rssi, int(parts[3]))
-            self.last_receive_ms = int(parts[4])
-            self.is_connected = True
-
-            self.logger.debug(
-                f"串口数据解析完毕，颜色：{self.color}, 击打次数：{self.hit_cnt}, 发送RSSI: {self.tx_rssi}, 接收RSSI: {self.rx_rssi}, 最后一次接收时间：{self.last_receive_ms}")
-            if self.last_receive_ms > 100:  # 延迟大于100ms的 considered as timeout
-                self._reset_data()
+                self.hit_cnt = int(parts[1])
+                self.tx_rssi = self._filter(self.tx_rssi, int(parts[2]))
+                self.rx_rssi = self._filter(self.rx_rssi, int(parts[3]))
+                self.last_receive_ms = int(parts[4])
                 self.is_connected = True
-        else:
-            self.logger.warning(f"串口数据格式错误，期望3个字段，实际收到{len(parts)}个")
+
+                self.logger.debug(
+                    f"串口数据解析完毕，颜色：{self.color}, 击打次数：{self.hit_cnt}, 发送RSSI: {self.tx_rssi}, 接收RSSI: {self.rx_rssi}, 最后一次接收时间：{self.last_receive_ms}")
+                if self.last_receive_ms > 100:  # 延迟大于100ms的 considered as timeout
+                    self._reset_data()
+                    self.is_connected = True
+            else:
+                self.logger.warning(f"串口数据格式错误，期望3个字段，实际收到{len(parts)}个")
+        except Exception as e:
+            self.logger.warning(f"串口数据解析报错: {e}")
 
     def _send(self):
-        if time.time() - self.last_send_time < 0.01:
+        if time.time() - self.last_send_time < 0.01:  # 100Hz 发送
             return
 
         try:
