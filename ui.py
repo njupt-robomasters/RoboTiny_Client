@@ -919,27 +919,37 @@ class UI(UIBase):
 
 
 def test_UIBase():
+    FULL_SCREEN = False
+
     app = QtWidgets.QApplication(sys.argv)
     ui = UIBase()
-    ui.resize(1280, 720)
-    ui.showNormal()
-    # ui.showMaximized()
-    # ui.showFullScreen()
 
-    ui.show_on_current_screen()
+    if FULL_SCREEN:
+        ui.show_on_current_screen()
+        ui.showFullScreen()
+    else:
+        ui.resize(1280, 720)
+        ui.showNormal()
+        # ui.showMaximized()
+        ui.show_on_current_screen()
 
     sys.exit(app.exec())
 
 
 def test_UI():
+    FULL_SCREEN = False
+
     app = QtWidgets.QApplication(sys.argv)
     ui = UI()
-    ui.resize(1280, 720)
-    ui.showNormal()
-    # ui.showMaximized()
-    # ui.showFullScreen()
 
-    ui.show_on_current_screen()
+    if FULL_SCREEN:
+        ui.show_on_current_screen()
+        ui.showFullScreen()
+    else:
+        ui.resize(1280, 720)
+        ui.showNormal()
+        # ui.showMaximized()
+        ui.show_on_current_screen()
 
     # 视频流
     # cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)

@@ -33,9 +33,10 @@ class Com(threading.Thread):
 
         self.logger.info(f"串口变更: {self.port} -> {port}")
         self.port = port
+        
+        self._reset_data()
 
         if self.serial:
-            self._reset_data()
             self.serial.close()
             self.serial = None
 
@@ -43,12 +44,12 @@ class Com(threading.Thread):
         self.logger.info("串口通信线程启动")
 
         while True:
-            if not self.port:
+            if self.port is None:
                 self.logger.warning("未设置串口端口")
                 time.sleep(0.1)
                 continue
 
-            if not self.serial:
+            if self.serial is None:
                 self.logger.info(f"尝试打开串口: {self.port}")
                 try:
                     self.serial = serial.Serial(self.port)
@@ -64,18 +65,18 @@ class Com(threading.Thread):
     def _read(self):
         if not self.serial.is_open:
             self.logger.error("串口未打开")
-            self._reset_data()
             self.serial.close()
             self.serial = None
+            self._reset_data()
             return
 
         try:
             line = self.serial.readline()
         except Exception as e:
             self.logger.error(f"串口读取报错: {e}")
-            self._reset_data()
             self.serial.close()
             self.serial = None
+            self._reset_data()
             return
 
         if not line:
