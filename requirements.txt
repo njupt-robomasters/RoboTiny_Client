@@ -1,6 +1,8 @@
 pyserial
-av
 opencv-python
+av
+amqtt
 PySide6
 numpy
+pyinstaller
 Pillow
