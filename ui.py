@@ -18,7 +18,7 @@ except Exception:
     list_ports = None
 
 
-class Overlay(QtWidgets.QWidget):  # 叠加层（准星 + 受击晕影）
+class Overlay(QtWidgets.QWidget):  # 叠加层（准星 + 受击晕影 + 居中大字）
 
     hitProgressChanged = QtCore.Signal(float)
 
@@ -28,6 +28,18 @@ class Overlay(QtWidgets.QWidget):  # 叠加层（准星 + 受击晕影）
         self.setAttribute(QtCore.Qt.WA_NoSystemBackground, True)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
         self.hit_progress = 0.0
+
+        # 用于居中大字的状态变量
+        self.center_text_line1 = ""
+        self.center_text_line2 = ""
+        self.center_text_color = QtGui.QColor(255, 255, 255)
+
+    def set_center_text(self, line1: str, line2: str, color="white"):  # 如果未提供颜色，则默认为白色
+        """设置居中大字的内容和颜色"""
+        self.center_text_line1 = line1
+        self.center_text_line2 = line2
+        self.center_text_color = QtGui.QColor(color)
+        self.update()
 
     def setHitProgress(self, value: float):
         self.hit_progress = value
@@ -66,6 +78,72 @@ class Overlay(QtWidgets.QWidget):  # 叠加层（准星 + 受击晕影）
             p.setBrush(QtGui.QBrush(grad))
             p.setPen(QtCore.Qt.NoPen)
             p.drawRect(0, 0, w, h)
+
+        # --- 增量代码开始 ---
+        # 居中大字
+        if self.center_text_line1 or self.center_text_line2:
+            p.save()  # 保存当前painter状态
+
+            # 1. 设置字体
+            font1 = QtGui.QFont(self.font().family(), int(h * 0.08), QtGui.QFont.Bold)
+            font2 = QtGui.QFont(self.font().family(), int(h * 0.05), QtGui.QFont.Bold)
+
+            # 2. 计算文本尺寸以确定背景大小
+            fm1 = QtGui.QFontMetrics(font1)
+            rect1 = fm1.boundingRect(self.center_text_line1)
+            fm2 = QtGui.QFontMetrics(font2)
+            rect2 = fm2.boundingRect(self.center_text_line2)
+
+            # 计算总宽度和高度
+            text_w = max(rect1.width(), rect2.width())
+            spacing = int(h * 0.02)
+            text_h = rect1.height() + rect2.height() + spacing
+
+            # 3. 绘制半透明背景
+            padding_x = int(w * 0.05)
+            padding_y = int(h * 0.03)
+            bg_w = text_w + padding_x * 2
+            bg_h = text_h + padding_y * 2
+
+            bg_rect = QtCore.QRectF(
+                (w - bg_w) / 2,
+                (h - bg_h) / 2,
+                bg_w,
+                bg_h
+            )
+            p.setPen(QtCore.Qt.NoPen)
+            p.setBrush(QtGui.QColor(0, 0, 0, 100))  # 半透明黑色背景
+            p.drawRoundedRect(bg_rect, 20.0, 20.0)  # 圆角
+
+            # 4. 绘制两行文字
+            p.setPen(QtGui.QPen(self.center_text_color))
+
+            # 定义每行文本的绘制区域
+            line1_rect = QtCore.QRectF(
+                bg_rect.x(),
+                bg_rect.y() + padding_y,
+                bg_rect.width(),
+                rect1.height()
+            )
+            line2_rect = QtCore.QRectF(
+                bg_rect.x(),
+                line1_rect.y() + line1_rect.height() + spacing,
+                bg_rect.width(),
+                rect2.height()
+            )
+
+            # 绘制第一行
+            if self.center_text_line1:
+                p.setFont(font1)
+                p.drawText(line1_rect, QtCore.Qt.AlignCenter, self.center_text_line1)
+
+            # 绘制第二行
+            if self.center_text_line2:
+                p.setFont(font2)
+                p.drawText(line2_rect, QtCore.Qt.AlignCenter, self.center_text_line2)
+
+            p.restore()  # 恢复painter状态
+        # --- 增量代码结束 ---
 
         p.end()
 
@@ -137,6 +215,15 @@ class CountdownBanner(QtWidgets.QFrame):  # 倒计时
         self.label.setStyleSheet("color: rgb(255,100,100); letter-spacing: 1px; margin:0px;")
         lay.addWidget(self.label)
 
+        # 1. 使用 QFontMetrics 计算一个足够宽的字符串（例如 "-00:00"）的像素宽度
+        #    这样可以确保 banner 的宽度足以容纳所有可能的倒计时文本，防止跳变。
+        font_metrics = QtGui.QFontMetrics(self.label.font())
+        # 使用一个 "模板字符串" 来确定最大宽度，"-00:00" 是一个不错的选择
+        max_text_width = font_metrics.horizontalAdvance("-00:00")
+
+        # 2. 为 QLabel 设置一个固定的宽度。可以稍微增加一点像素作为安全边距。
+        self.label.setFixedWidth(max_text_width + 10)
+
     def set_text(self, txt):
         self.label.setText(txt)
 
@@ -181,27 +268,53 @@ class UIBase(QtWidgets.QMainWindow):
 
         # 叠加层（准星 + 受击晕影）
         self.overlay = Overlay(self.bg_label)
-        self.overlay.setGeometry(
-            0, 0, self.screen_size.width(), self.screen_size.height())
+        self.overlay.setGeometry(0, 0, self.screen_size.width(), self.screen_size.height())
         self.overlay.raise_()
 
         # 顶部 HUD与倒计时
         self.top_hud = QtWidgets.QWidget(self, objectName="topHud")
         self.top_layout = QtWidgets.QHBoxLayout(self.top_hud)
         self.top_layout.setContentsMargins(0, 0, 0, 0)
-        self.top_layout.setSpacing(12)
-        self.red_bar_top = HealthBar(self.top_hud, label_text="红方", team="red", height=64)
-        self.blue_bar_top = HealthBar(self.top_hud, label_text="蓝方", team="blue", height=64)
+        self.top_layout.setSpacing(20)
+
+        # -- 红方信息 --
+        self.red_team_widget = QtWidgets.QWidget(self.top_hud)
+        red_layout = QtWidgets.QVBoxLayout(self.red_team_widget)
+        red_layout.setContentsMargins(0, 0, 0, 0)
+        red_layout.setSpacing(2)  # 修改：减小间距
+        self.red_name_label = QtWidgets.QLabel("红方队伍", objectName="redNameLabel")
+        self.red_name_label.setAlignment(QtCore.Qt.AlignCenter)
+        f_team = QtGui.QFont(self.font_main)
+        f_team.setBold(True)
+        f_team.setPointSize(20)  # 修改：增大字体
+        self.red_name_label.setFont(f_team)
+        self.red_bar_top = HealthBar(self.red_team_widget, label_text="红方", team="red", height=48)
+        red_layout.addWidget(self.red_name_label)
+        red_layout.addWidget(self.red_bar_top)
+        red_layout.addStretch(1)  # 新增：添加伸缩项，将内容推向顶部
+
+        # -- 蓝方信息 --
+        self.blue_team_widget = QtWidgets.QWidget(self.top_hud)
+        blue_layout = QtWidgets.QVBoxLayout(self.blue_team_widget)
+        blue_layout.setContentsMargins(0, 0, 0, 0)
+        blue_layout.setSpacing(2)  # 修改：减小间距
+        self.blue_name_label = QtWidgets.QLabel("蓝方队伍", objectName="blueNameLabel")
+        self.blue_name_label.setAlignment(QtCore.Qt.AlignCenter)
+        self.blue_name_label.setFont(f_team)
+        self.blue_bar_top = HealthBar(self.blue_team_widget, label_text="蓝方", team="blue", height=48)
+        blue_layout.addWidget(self.blue_name_label)
+        blue_layout.addWidget(self.blue_bar_top)
+        blue_layout.addStretch(1)  # 新增：添加伸缩项，将内容推向顶部
 
         # 倒计时
         self.countdown_banner = CountdownBanner(self.top_hud)
 
         self.top_layout.addStretch(1)
-        self.top_layout.addWidget(self.red_bar_top, 2)
+        self.top_layout.addWidget(self.red_team_widget, 2)
         self.top_layout.addSpacing(12)
         self.top_layout.addWidget(self.countdown_banner, 0, QtCore.Qt.AlignVCenter)
         self.top_layout.addSpacing(12)
-        self.top_layout.addWidget(self.blue_bar_top, 2)
+        self.top_layout.addWidget(self.blue_team_widget, 2)
         self.top_layout.addStretch(1)
 
         # 右上角按钮
@@ -542,22 +655,19 @@ class UIBase(QtWidgets.QMainWindow):
         self.overlay.setGeometry(0, 0, W, H)
 
         # 顶部 HUD
-        top_y = int(H * 0.010)
-        top_h = int(H * 0.13)
+        top_y = int(H * 0.020)  # 修改：微调Y坐标
+        top_h = int(H * 0.12)  # 修改：减小整体高度
         side_margin = int(W * 0.035)
         self.top_hud.setGeometry(
             side_margin, top_y, W - side_margin * 2, top_h)
         self.top_layout.setContentsMargins(
             int(W * 0.010), 0, int(W * 0.010), 0)
 
-        max_bar_w = int(W * 0.16)
-        min_bar_w = 220
-        for bar in (self.red_bar_top, self.blue_bar_top):
-            bar.setMaximumWidth(max_bar_w)
-            bar.setMinimumWidth(min_bar_w)
-        bw = max(int(W * 0.18), 280)
-        self.countdown_banner.setMinimumWidth(bw)
-        self.countdown_banner.setMaximumWidth(bw)
+        max_bar_w = int(W * 0.22)
+        min_bar_w = 260
+        for w in (self.red_team_widget, self.blue_team_widget):
+            w.setMaximumWidth(max_bar_w)
+            w.setMinimumWidth(min_bar_w)
 
         # 右上按钮
         btn_w, btn_h, gap = 114, 42, 10
@@ -634,6 +744,8 @@ class UIBase(QtWidgets.QMainWindow):
             background: rgba(255,255,255,0.10); color: #ffffff; border: 1px solid rgba(255,255,255,0.22);
             border-radius: 8px; padding: 8px 10px;
         }
+        #redNameLabel { color: #ff6b6b; }
+        #blueNameLabel { color: #6ea8ff; }
         QLabel { color: #ffffff; }
         """
 
@@ -699,6 +811,20 @@ class UI(UIBase):
         self._input_timer.start()
 
     # ============== 公共 API ==============
+
+    def set_red_name(self, name: str):
+        """设置红方队伍名称"""
+        if name is None:
+            return
+        self.red_name_label.setText(name)
+        self.red_name_label.setAlignment(QtCore.Qt.AlignCenter)
+
+    def set_blue_name(self, name: str):
+        """设置蓝方队伍名称"""
+        if name is None:
+            return
+        self.blue_name_label.setText(name)
+        self.blue_name_label.setAlignment(QtCore.Qt.AlignCenter)
 
     def set_frame(self, frame_bgr: np.ndarray):
         if frame_bgr is None:
@@ -775,6 +901,20 @@ class UI(UIBase):
     def set_mqtt_freq(self, freq):
         self.mqtt_freq = freq
         self._update_status()
+
+    def set_center_txt(self, line1: str, line2: str, color="white"):
+        """
+        设置屏幕中央的大字提示。
+        如果 line1 和 line2 都为空，则隐藏提示。
+
+        Args:
+            line1 (str): 第一行文本 (较大)。
+            line2 (str): 第二行文本 (较小)。
+            color (QColor | str | tuple, optional): 文本颜色。
+                   可以是 "red", "#FF0000", (255,0,0) 等格式。
+                   默认为 None (白色)。
+        """
+        self.overlay.set_center_text(line1, line2, color)
 
     def get_serial_port(self) -> str | None:
         return self.serial_port
@@ -864,7 +1004,7 @@ class UI(UIBase):
                 # 启用按钮
                 self.exit_btn.setEnabled(True)
                 self.settings_btn.setEnabled(True)
-        
+
         # 光标显示时：dbus报文置零
         if self._cursor_shown:
             self._last_mouse_time = time.perf_counter()
@@ -1063,6 +1203,27 @@ def test_UI():
     timer_status.timeout.connect(update_status)
     timer_status.start(1000)
 
+    # 队伍名称切换演示
+    team_names = [
+        ("Red Team Alpha", "Blue Team Beta"),
+        ("Crimson Vanguard", "Cobalt Sentinels"),
+        ("红方队伍", "蓝方队伍"),
+    ]
+    name_idx = 0
+    # 初始设置
+    ui.set_red_name(team_names[name_idx][0])
+    ui.set_blue_name(team_names[name_idx][1])
+
+    def update_names():
+        nonlocal name_idx
+        name_idx = (name_idx + 1) % len(team_names)
+        ui.set_red_name(team_names[name_idx][0])
+        ui.set_blue_name(team_names[name_idx][1])
+
+    timer_names = QtCore.QTimer()
+    timer_names.timeout.connect(update_names)
+    timer_names.start(4000)
+
     # 受击打演示
     def update_hit():
         ui.trigger_hit()
@@ -1070,6 +1231,20 @@ def test_UI():
     timer_hit = QtCore.QTimer()
     timer_hit.timeout.connect(update_hit)
     timer_hit.start(3000)
+
+    def show_center_text_demo():
+        # 演示不同内容和颜色
+        ui.set_center_txt("比赛即将开始", "5", "yellow")
+        QtCore.QTimer.singleShot(1000, lambda: ui.set_center_txt("比赛即将开始", "4", "yellow"))
+        QtCore.QTimer.singleShot(2000, lambda: ui.set_center_txt("比赛即将开始", "3", QtGui.QColor(255, 165, 0)))  # 橙色
+        QtCore.QTimer.singleShot(3000, lambda: ui.set_center_txt("比赛即将开始", "2", "red"))
+        QtCore.QTimer.singleShot(4000, lambda: ui.set_center_txt("比赛即将开始", "1", "red"))
+        QtCore.QTimer.singleShot(5000, lambda: ui.set_center_txt("FIGHT!", "", "#FFFFFF"))  # 白色
+        # 6.5秒后清空文本，背景和文字会一起消失
+        QtCore.QTimer.singleShot(6500, lambda: ui.set_center_txt(None, None))
+
+    # 延迟1秒后开始演示
+    QtCore.QTimer.singleShot(1000, show_center_text_demo)
 
     # 定时打印
     # def update_print():

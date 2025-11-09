@@ -14,9 +14,9 @@ PUBLISH_FREQ = 10
 class MQTT(threading.Thread):
 
     DEFAULT_REFEREE_MSG = {
-        "countdown": 0, "state": 0, "txt": "",
-        "red": {"name": "红方队伍", "hp": 100, "yellow_card_ms": None, "reset_hp_ms": None},
-        "blue": {"name": "蓝方队伍", "hp": 100, "yellow_card_ms": None, "reset_hp_ms": None}
+        "countdown": None, "state": None, "txt": None,
+        "red": {"name": None, "hp": None, "yellow_card_ms": None, "reset_hp_ms": None},
+        "blue": {"name": None, "hp": None, "yellow_card_ms": None, "reset_hp_ms": None}
     }
 
     def __init__(self, level=logging.WARNING):
