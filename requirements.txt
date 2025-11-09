@@ -1,0 +1,6 @@
+pyserial
+av
+opencv-python
+PySide6
+numpy
+Pillow

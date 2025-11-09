@@ -1,11 +1,13 @@
 from PySide6 import QtCore, QtGui, QtWidgets
-import sys
-import numpy as np
-import time
-import re
-import cv2
 
-# ===== 全局参数与开关 =====
+import numpy as np
+import re
+import sys
+import time
+import logging
+
+DEFAULT_BROKER_URL = "mqtt://127.0.0.1:1883"
+
 INPUT_MAX_DX = 32768   # 每秒允许的最大鼠标X位移（像素），映射到±32768
 INPUT_MAX_DY = 32768   # 每秒允许的最大鼠标Y位移（像素），映射到±32768
 INPUT_MAX_DZ = 32768   # 每秒允许的最大滚轮步数（每步=一格=delta/120），映射到±32768
@@ -126,13 +128,13 @@ class CountdownBanner(QtWidgets.QFrame):  # 倒计时
         lay = QtWidgets.QHBoxLayout(self)
         lay.setContentsMargins(26, 14, 26, 14)
         lay.setSpacing(8)
-        self.label = QtWidgets.QLabel("3:00")
+        self.label = QtWidgets.QLabel("0:00")
         self.label.setAlignment(QtCore.Qt.AlignCenter)
         f = QtGui.QFont(self.window().font())
         f.setBold(True)
         f.setPointSize(28)
         self.label.setFont(f)
-        self.label.setStyleSheet("color: #f5f7fa; letter-spacing: 1px; margin:0px;")
+        self.label.setStyleSheet("color: rgb(255,100,100); letter-spacing: 1px; margin:0px;")
         lay.addWidget(self.label)
 
     def set_text(self, txt):
@@ -147,8 +149,13 @@ class CountdownBanner(QtWidgets.QFrame):  # 倒计时
 
 
 class UIBase(QtWidgets.QMainWindow):
-    def __init__(self):
+    def __init__(self, level=logging.WARNING):
+        self.app = QtWidgets.QApplication(sys.argv)
+
         super().__init__()
+
+        self.logger = logging.getLogger("UI")
+        self.logger.setLevel(level)
 
         self.setWindowTitle("RoboMaster校内赛选手端")
 
@@ -254,15 +261,15 @@ class UIBase(QtWidgets.QMainWindow):
         self.hit_anim.setEasingCurve(QtCore.QEasingCurve.OutCubic)
 
         # 状态变量
-        self.fps = None
         self.serial_is_connected = False
+        self.video_fps = None
+        self.mqtt_freq = None
         self.tx_rssi = None
         self.rx_rssi = None
-        self.server_latency_ms = None
 
         self.serial_port = None
         self.video_source = self.video_edit.text().strip()
-        self.server_ip = self.server_edit.text().strip()
+        self.mqtt_url = self.server_edit.text().strip()
 
         self._update_status()
 
@@ -313,7 +320,7 @@ class UIBase(QtWidgets.QMainWindow):
 
         # 用“已应用”的值回填控件
         self.video_edit.setText(self.video_source or "")
-        self.server_edit.setText(self.server_ip or "")
+        self.server_edit.setText(self.mqtt_url or "")
         if self.serial_port:
             idx = self.serial_combo.findData(self.serial_port)
             if idx >= 0:
@@ -339,7 +346,7 @@ class UIBase(QtWidgets.QMainWindow):
                             if data and str(data).strip().upper() != "NA"
                             else None)
         self.video_source = self.video_edit.text().strip()
-        self.server_ip = self.server_edit.text().strip()
+        self.mqtt_url = self.server_edit.text().strip()
 
         # 清理并关闭面板
         self._menu_snapshot = None
@@ -414,17 +421,17 @@ class UIBase(QtWidgets.QMainWindow):
         r2.addWidget(self.video_edit, 1)
         layout.addWidget(row2)
 
-        # 服务器地址
+        # MQTT地址
         row3 = QtWidgets.QWidget()
         r3 = QtWidgets.QHBoxLayout(row3)
         r3.setContentsMargins(0, 0, 0, 0)
         r3.setSpacing(10)
-        l3 = QtWidgets.QLabel("服务器地址")
+        l3 = QtWidgets.QLabel("MQTT地址")
         l3.setFixedWidth(label_w)
         l3.setFont(self._font_scaled(0.022))
         self.server_edit = QtWidgets.QLineEdit(objectName="serverEdit")
         self.server_edit.setFont(self._font_scaled(0.022))
-        self.server_edit.setText("192.168.10.1")
+        self.server_edit.setText(DEFAULT_BROKER_URL)
         r3.addWidget(l3)
         r3.addWidget(self.server_edit, 1)
         layout.addWidget(row3)
@@ -487,22 +494,22 @@ class UIBase(QtWidgets.QMainWindow):
         self.armor_label.setFixedWidth(inner_w)
 
     def _update_status(self):
-        if self.fps is None:
-            fps_txt = "<span style='color:#ff5a5a;'>视频帧率: 未连接</span>"
-        else:
-            fps_txt = f"<span style='color:#eaeaea;'>视频帧率: {self.fps:.0f} fps</span>"
-
         if not self.serial_is_connected:
             serial_txt = "<span style='color:#ff5a5a;'>串口: 未连接</span>"
         else:
             serial_txt = "<span style='color:#eaeaea;'>串口: 已连接</span>"
 
-        if self.server_latency_ms is None:
-            server_txt = "<span style='color:#ff5a5a;'>服务器延迟：未连接</span>"
+        if self.video_fps is None:
+            video_txt = "<span style='color:#ff5a5a;'>图传: 未连接</span>"
         else:
-            server_txt = f"<span style='color:#eaeaea;'>服务器延迟: {self.server_latency_ms:.0f} ms</span>"
+            video_txt = f"<span style='color:#eaeaea;'>图传: {self.video_fps:.0f} fps</span>"
 
-        html = f"<div style='text-align:center'>{fps_txt} | {serial_txt} | {server_txt}</div>"
+        if self.mqtt_freq is None:
+            mqtt_txt = "<span style='color:#ff5a5a;'>MQTT: 未连接</span>"
+        else:
+            mqtt_txt = f"<span style='color:#eaeaea;'>MQTT: {self.mqtt_freq:02.0f} Hz</span>"
+
+        html = f"<div style='text-align:center'>{serial_txt} | {video_txt} | {mqtt_txt}</div>"
         self.status_label.setText(html)
 
         if self.tx_rssi is None or self.rx_rssi is None:
@@ -627,7 +634,7 @@ class UIBase(QtWidgets.QMainWindow):
             background: rgba(255,255,255,0.10); color: #ffffff; border: 1px solid rgba(255,255,255,0.22);
             border-radius: 8px; padding: 8px 10px;
         }
-        QLabel { color: #ffffff; }  /* 添加这一行确保所有标签文字为白色 */
+        QLabel { color: #ffffff; }
         """
 
     def _style_buttons_font(self):
@@ -637,7 +644,7 @@ class UIBase(QtWidgets.QMainWindow):
             fbtn.setPointSize(12)
             b.setFont(fbtn)
 
-    def show_on_current_screen(self):
+    def move_to_current_screen(self):
         """将窗口显示在当前活动屏幕上"""
         cursor_pos = QtGui.QCursor.pos()
         screen = QtWidgets.QApplication.screenAt(cursor_pos)
@@ -652,10 +659,23 @@ class UIBase(QtWidgets.QMainWindow):
         # 移动窗口到指定位置
         self.move(x, y)
 
+    def loop(self, resize=None):
+        if resize is None:
+            # 全屏显示
+            self.move_to_current_screen()
+            self.showFullScreen()
+        else:
+            self.resize(*resize)
+            self.move_to_current_screen()
+            self.showNormal()
+            # ui.showMaximized()
+
+        self.app.exec()
+
 
 class UI(UIBase):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, level=logging.WARNING):
+        super().__init__(level)
 
         # 键鼠采样相关
         self._last_mouse_time = time.perf_counter()
@@ -710,25 +730,38 @@ class UI(UIBase):
 
         self.bg_label.setPixmap(QtGui.QPixmap.fromImage(final_image))
 
-    def set_fps(self, fps):
-        self.fps = fps
+    def set_video_fps(self, fps):
+        self.video_fps = fps
         self._update_status()
 
-    def set_countdown(self, seconds: int):
-        m, s = seconds // 60, seconds % 60
-        self.countdown_banner.set_text(f"{m}:{s:02d}")
-        self.countdown_banner.set_warning(seconds <= 10)
+    def set_countdown(self, seconds: int | None):
+        if seconds is None:
+            return
+        if seconds >= 0:
+            m, s = seconds // 60, seconds % 60
+            self.countdown_banner.set_text(f"{m}:{s:02d}")
+            self.countdown_banner.set_warning(seconds <= 10)
+        else:
+            # 显示负值，例如：-1:30 表示负1分30秒
+            abs_seconds = abs(seconds)
+            m, s = abs_seconds // 60, abs_seconds % 60
+            self.countdown_banner.set_text(f"-{m}:{s:02d}")
+            self.countdown_banner.set_warning(False)
 
     def set_color(self, color: str | None):
         self.color = color if color in ("red", "blue") else None
         self.self_bar.set_color(self.color)
 
     def set_red_hp(self, hp: int | None):
+        if hp is None:
+            return
         self.red_bar_top.set_value(hp)
         if self.color == "red":
             self.self_bar.set_value(hp)
 
     def set_blue_hp(self, hp: int | None):
+        if hp is None:
+            return
         self.blue_bar_top.set_value(hp)
         if self.color == "blue":
             self.self_bar.set_value(hp)
@@ -739,8 +772,8 @@ class UI(UIBase):
         self.rx_rssi = rx_rssi
         self._update_status()
 
-    def set_server_latency(self, ms):
-        self.server_latency_ms = ms
+    def set_mqtt_freq(self, freq):
+        self.mqtt_freq = freq
         self._update_status()
 
     def get_serial_port(self) -> str | None:
@@ -749,8 +782,8 @@ class UI(UIBase):
     def get_video_source(self) -> str | None:
         return self.video_source
 
-    def get_server_ip(self) -> str | None:
-        return self.server_ip
+    def get_mqtt_url(self) -> str | None:
+        return self.mqtt_url
 
     def get_dbus_packet(self) -> bytes:
         return self._dbus_packet
@@ -822,6 +855,16 @@ class UI(UIBase):
         return bytes(packet)
 
     def _sample_input(self):
+        # 每次采样的时候都判断下是否失去焦点
+        if not self.isActiveWindow():
+            if not self._cursor_shown:
+                self._cursor_shown = True
+                # 显示光标
+                self.setCursor(QtCore.Qt.ArrowCursor)
+                # 启用按钮
+                self.exit_btn.setEnabled(True)
+                self.settings_btn.setEnabled(True)
+        
         # 光标显示时：dbus报文置零
         if self._cursor_shown:
             self._last_mouse_time = time.perf_counter()
@@ -906,8 +949,7 @@ class UI(UIBase):
                 # 隐藏光标
                 self.setCursor(QtCore.Qt.BlankCursor)
                 # 光标居中
-                center = self.mapToGlobal(QtCore.QPoint(
-                    self.width() // 2, self.height() // 2))
+                center = self.mapToGlobal(QtCore.QPoint(self.width() // 2, self.height() // 2))
                 QtGui.QCursor.setPos(center)
                 # 禁用按钮
                 self.exit_btn.setEnabled(False)
@@ -919,37 +961,12 @@ class UI(UIBase):
 
 
 def test_UIBase():
-    FULL_SCREEN = False
-
-    app = QtWidgets.QApplication(sys.argv)
     ui = UIBase()
-
-    if FULL_SCREEN:
-        ui.show_on_current_screen()
-        ui.showFullScreen()
-    else:
-        ui.resize(1280, 720)
-        ui.showNormal()
-        # ui.showMaximized()
-        ui.show_on_current_screen()
-
-    sys.exit(app.exec())
+    ui.loop((1280, 720))
 
 
 def test_UI():
-    FULL_SCREEN = False
-
-    app = QtWidgets.QApplication(sys.argv)
     ui = UI()
-
-    if FULL_SCREEN:
-        ui.show_on_current_screen()
-        ui.showFullScreen()
-    else:
-        ui.resize(1280, 720)
-        ui.showNormal()
-        # ui.showMaximized()
-        ui.show_on_current_screen()
 
     # 视频流
     # cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
@@ -1037,9 +1054,9 @@ def test_UI():
     def update_status():
         nonlocal status_idx
         s = status_states[status_idx]
-        ui.set_fps(s["fps"])
+        ui.set_video_fps(s["fps"])
         ui.set_serial_status(s["serial"][0], s["serial"][1], s["serial"][2])
-        ui.set_server_latency(s["server"])
+        ui.set_mqtt_freq(s["server"])
         status_idx = (status_idx + 1) % len(status_states)
 
     timer_status = QtCore.QTimer()
@@ -1056,16 +1073,18 @@ def test_UI():
 
     # 定时打印
     # def update_print():
-    #     print(ui.get_serial_port(), ui.get_video_source(), ui.get_server_ip())
+    #     print(ui.get_serial_port(), ui.get_video_source(), ui.get_mqtt_url())
 
     # timer_print = QtCore.QTimer()
     # # timer_print.timeout.connect(update_print)
     # timer_print.start(500)
 
-    sys.exit(app.exec())
+    ui.loop((1280, 720))
 
 
 def main():
+    logging.basicConfig(format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
+
     # test_UIBase()
     test_UI()
 
