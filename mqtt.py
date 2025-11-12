@@ -132,8 +132,7 @@ class MQTT(threading.Thread):
 if __name__ == "__main__":
     logging.basicConfig(format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
 
-    mqtt = MQTT()
-    mqtt.logger.setLevel(logging.DEBUG)
+    mqtt = MQTT(logging.INFO)
     mqtt.start()
 
     mqtt.set_broker_url("mqtt://127.0.0.1:1883")

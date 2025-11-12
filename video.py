@@ -42,7 +42,7 @@ class Video(threading.Thread):
             if self._container is None:
                 self.logger.info(f"尝试连接视频源: {self._source}")
                 try:
-                    self._container = av.open(self._source, options={"timeout": "3000000"})  # 超时3秒（单位：微秒）
+                    self._container = av.open(self._source, format='dshow', options={"timeout": "3000000"})  # 超时3秒（单位：微秒）
                     self.logger.info(f"视频源连接成功")
                 except Exception as e:
                     self.logger.info(f"连接视频源报错: {e}")
@@ -87,7 +87,7 @@ class Video(threading.Thread):
 if __name__ == "__main__":
     logging.basicConfig(format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
 
-    video = Video()
+    video = Video(logging.INFO)
     video.start()
     source = "rtsp://192.168.1.1:7070/webcam"  # 请替换为实际的视频源
     video.set_source(source)

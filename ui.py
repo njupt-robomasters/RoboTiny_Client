@@ -1,4 +1,6 @@
 from PySide6 import QtCore, QtGui, QtWidgets
+from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
+from PySide6.QtCore import QUrl
 
 import numpy as np
 import re
@@ -789,6 +791,14 @@ class UI(UIBase):
     def __init__(self, level=logging.WARNING):
         super().__init__(level)
 
+        # bgm播放
+        self.media_player = QMediaPlayer()
+        self.audio_output = QAudioOutput()
+        self.media_player.setAudioOutput(self.audio_output)
+        self.media_player.setSource(QUrl.fromLocalFile("./assets/bgm.mp3"))
+        self.audio_output.setVolume(1.0)  # 设置音量（0.0 - 1.0）
+        self.bgm_start_time = 0
+
         # 键鼠采样相关
         self._last_mouse_time = time.perf_counter()
         self._wheel_accum = 0.0  # 累积滚轮“档位”（120为一档 -> 累加为 1.0）
@@ -862,17 +872,36 @@ class UI(UIBase):
 
     def set_countdown(self, seconds: int | None):
         if seconds is None:
+            self.media_player.stop()
+            self.bgm_start_time = 0
             return
+
+        bgm_start_time = self.bgm_start_time
         if seconds >= 0:
             m, s = seconds // 60, seconds % 60
             self.countdown_banner.set_text(f"{m}:{s:02d}")
             self.countdown_banner.set_warning(seconds <= 10)
+            # bgm
+            if seconds == 0:
+                self.media_player.stop()
+                self.bgm_start_time = 0
+            else:
+                bgm_start_time = time.time() - 120 - (180 - seconds)
         else:
             # 显示负值，例如：-1:30 表示负1分30秒
             abs_seconds = abs(seconds)
             m, s = abs_seconds // 60, abs_seconds % 60
             self.countdown_banner.set_text(f"-{m}:{s:02d}")
             self.countdown_banner.set_warning(False)
+            # bgm
+            bgm_start_time = time.time() - (120 - -seconds)
+        
+        if abs(bgm_start_time - self.bgm_start_time) > 2: # 最大允许bgm 2秒误差
+            position = time.time() - bgm_start_time
+            if position < 300:
+                self.media_player.setPosition(int(position * 1000))
+                self.media_player.play()
+                self.bgm_start_time = bgm_start_time
 
     def set_color(self, color: str | None):
         self.color = color if color in ("red", "blue") else None
@@ -1101,12 +1130,12 @@ class UI(UIBase):
 
 
 def test_UIBase():
-    ui = UIBase()
+    ui = UIBase(logging.INFO)
     ui.loop((1280, 720))
 
 
 def test_UI():
-    ui = UI()
+    ui = UI(logging.INFO)
 
     # 视频流
     # cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
