@@ -81,7 +81,6 @@ class Overlay(QtWidgets.QWidget):  # 叠加层（准星 + 受击晕影 + 居中�
             p.setPen(QtCore.Qt.NoPen)
             p.drawRect(0, 0, w, h)
 
-        # --- 增量代码开始 ---
         # 居中大字
         if self.center_text_line1 or self.center_text_line2:
             p.save()  # 保存当前painter状态
@@ -145,7 +144,6 @@ class Overlay(QtWidgets.QWidget):  # 叠加层（准星 + 受击晕影 + 居中�
                 p.drawText(line2_rect, QtCore.Qt.AlignCenter, self.center_text_line2)
 
             p.restore()  # 恢复painter状态
-        # --- 增量代码结束 ---
 
         p.end()
 
@@ -235,6 +233,69 @@ class CountdownBanner(QtWidgets.QFrame):  # 倒计时
             if warn
             else "color: #f5f7fa; letter-spacing: 1px; margin:0px;"
         )
+
+
+class ToggleSwitch(QtWidgets.QCheckBox):
+    """
+    一个自定义的、类似手机UI的滑动开关控件。
+    它继承自 QCheckBox，因此拥有其所有功能和信号。
+    """
+    def __init__(self, parent=None, bg_color="#777", circle_color="#FFF", active_color="#3478F6"):
+        super().__init__(parent)
+        self.setFixedSize(52, 28)
+        self.setCursor(QtCore.Qt.PointingHandCursor)
+
+        # 颜色
+        self._bg_color = QtGui.QColor(bg_color)
+        self._circle_color = QtGui.QColor(circle_color)
+        self._active_color = QtGui.QColor(active_color)
+
+        self._circle_position = 3
+        self.animation = QtCore.QPropertyAnimation(self, b"circle_position", self)
+        self.animation.setEasingCurve(QtCore.QEasingCurve.OutCubic)
+        self.animation.setDuration(200) # 动画时长 ms
+
+        self.stateChanged.connect(self.start_animation)
+
+    @QtCore.Property(int)
+    def circle_position(self):
+        return self._circle_position
+
+    @circle_position.setter
+    def circle_position(self, pos):
+        self._circle_position = pos
+        self.update()
+
+    def start_animation(self, value):
+        self.animation.stop()
+        if value:
+            self.animation.setEndValue(self.width() - self.height() + 3)
+        else:
+            self.animation.setEndValue(3)
+        self.animation.start()
+
+    def paintEvent(self, e):
+        p = QtGui.QPainter(self)
+        p.setRenderHint(QtGui.QPainter.Antialiasing)
+        p.setPen(QtCore.Qt.NoPen)
+        
+        # 绘制背景
+        rect = QtCore.QRect(0, 0, self.width(), self.height())
+        if self.isChecked():
+            p.setBrush(self._active_color)
+        else:
+            p.setBrush(self._bg_color)
+        p.drawRoundedRect(rect, self.height() / 2, self.height() / 2)
+
+        # 绘制滑块
+        p.setBrush(self._circle_color)
+        p.drawEllipse(
+            self._circle_position, 3, self.height() - 6, self.height() - 6
+        )
+
+    def mousePressEvent(self, e):
+        self.toggle()
+        return super().mousePressEvent(e)
 
 
 class UIBase(QtWidgets.QMainWindow):
@@ -385,8 +446,10 @@ class UIBase(QtWidgets.QMainWindow):
         self.serial_port = None
         self.video_source = self.video_edit.text().strip()
         self.mqtt_url = self.server_edit.text().strip()
+        self.big_screen_mode = False  # <-- 新增：大屏模式状态，默认关闭
 
         self._update_status()
+        self._update_ui_for_big_screen_mode()  # <-- 新增：应用初始的大屏模式设置
 
     # ============== 内部方法 ==============
 
@@ -440,12 +503,14 @@ class UIBase(QtWidgets.QMainWindow):
             idx = self.serial_combo.findData(self.serial_port)
             if idx >= 0:
                 self.serial_combo.setCurrentIndex(idx)
+        self.big_screen_mode_check.setChecked(self.big_screen_mode)  # <-- 新增：回填大屏模式开关状态
 
         # 拍快照（用于取消恢复）
         self._menu_snapshot = {
             "serial_index": self.serial_combo.currentIndex() if hasattr(self, "serial_combo") else 0,
             "video": self.video_edit.text() if hasattr(self, "video_edit") else "",
             "server": self.server_edit.text() if hasattr(self, "server_edit") else "",
+            "big_screen_mode": self.big_screen_mode_check.isChecked(),  # <-- 新增：保存大屏模式开关快照
         }
         self._center_menu()
         self.menu_mask.setGeometry(0, 0, self.width(), self.height())
@@ -462,6 +527,9 @@ class UIBase(QtWidgets.QMainWindow):
                             else None)
         self.video_source = self.video_edit.text().strip()
         self.mqtt_url = self.server_edit.text().strip()
+        self.big_screen_mode = self.big_screen_mode_check.isChecked()  # <-- 新增：应用大屏模式设置
+
+        self._update_ui_for_big_screen_mode()  # <-- 新增：应用UI变化
 
         # 清理并关闭面板
         self._menu_snapshot = None
@@ -477,6 +545,7 @@ class UIBase(QtWidgets.QMainWindow):
                 pass
             self.video_edit.setText(snap["video"])
             self.server_edit.setText(snap["server"])
+            self.big_screen_mode_check.setChecked(snap["big_screen_mode"])  # <-- 新增：恢复大屏模式开关状态
         self._menu_snapshot = None
         self.menu_panel.hide()
         self.menu_mask.hide()
@@ -550,6 +619,22 @@ class UIBase(QtWidgets.QMainWindow):
         r3.addWidget(l3)
         r3.addWidget(self.server_edit, 1)
         layout.addWidget(row3)
+
+        # --- 新增代码开始 ---
+        # 大屏模式开关
+        row4 = QtWidgets.QWidget()
+        r4 = QtWidgets.QHBoxLayout(row4)
+        r4.setContentsMargins(0, 0, 0, 0)
+        r4.setSpacing(10)
+        l4 = QtWidgets.QLabel("大屏模式")
+        l4.setFixedWidth(label_w)
+        l4.setFont(self._font_scaled(0.022))
+        self.big_screen_mode_check = ToggleSwitch(self) # <-- 使用新的开关控件
+        r4.addWidget(l4)
+        r4.addWidget(self.big_screen_mode_check)
+        r4.addStretch(1) # 添加一个伸缩项，让开关靠左
+        layout.addWidget(row4)
+        # --- 新增代码结束 ---
 
         layout.addStretch(1)
 
@@ -638,6 +723,15 @@ class UIBase(QtWidgets.QMainWindow):
 
         self._update_bottom_panel_layout()
 
+    # --- 新增方法开始 ---
+    def _update_ui_for_big_screen_mode(self):
+        """根据大屏模式的设置，显示或隐藏左下角面板"""
+        if self.big_screen_mode:
+            self.bottom_left_panel.hide()
+        else:
+            self.bottom_left_panel.show()
+    # --- 新增方法结束 ---
+
     def _format_serial_label(self, device: str, desc: str) -> str:
         """
         若描述中已包含 'COM数字'，直接返回描述；否则：若有描述显示 '描述 (COMx)'；若无描述仅显示 'COMx'
@@ -694,7 +788,7 @@ class UIBase(QtWidgets.QMainWindow):
     def _center_menu(self):
         W, H = self.width(), self.height()
         panel_w = int(W * 0.40)
-        panel_h = int(H * 0.56)
+        panel_h = int(H * 0.62) # 适当增加高度以容纳新选项
         self.menu_panel.setGeometry(
             (W - panel_w) // 2, (H - panel_h) // 2, panel_w, panel_h)
 
