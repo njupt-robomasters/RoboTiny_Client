@@ -767,12 +767,18 @@ class UIBase(QtWidgets.QMainWindow):
 
         # 右上按钮
         btn_w, btn_h, gap = 114, 42, 10
-        btn_y = top_y + (top_h - btn_h) // 2
         right_margin = int(W * 0.035)
-        self.exit_btn.setGeometry(
-            W - right_margin - btn_w, btn_y, btn_w, btn_h)
-        self.settings_btn.setGeometry(
-            W - right_margin - btn_w * 2 - gap, btn_y, btn_w, btn_h)
+
+        # 计算两个按钮共享的 X 坐标
+        btn_x = W - right_margin - btn_w
+
+        # “退出”按钮在上方，其 Y 坐标与顶部HUD对齐
+        exit_btn_y = top_y
+        self.exit_btn.setGeometry(btn_x, exit_btn_y, btn_w, btn_h)
+
+        # “设置”按钮在下方，其 Y 坐标在“退出”按钮之下，并加上一个间隙
+        settings_btn_y = exit_btn_y + btn_h + gap
+        self.settings_btn.setGeometry(btn_x, settings_btn_y, btn_w, btn_h)
 
         # 左下角布局
         self._update_bottom_panel_layout()
