@@ -10,7 +10,7 @@ import sys
 import time
 import logging
 
-DEFAULT_BROKER_URL = "mqtt://127.0.0.1:1883"
+DEFAULT_BROKER_URL = "mqtt://192.168.10.1:1883"
 
 INPUT_MAX_DX = 32768   # 每秒允许的最大鼠标X位移（像素），映射到±32768
 INPUT_MAX_DY = 32768   # 每秒允许的最大鼠标Y位移（像素），映射到±32768
