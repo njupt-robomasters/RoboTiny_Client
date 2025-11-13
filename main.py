@@ -2,163 +2,188 @@ from PySide6 import QtCore, QtGui
 import time
 import logging
 
-from ser import Ser
+from uart import UART
 from video import Video
 from mqtt import MQTT
 from ui import UI
 
-FULL_SCREEN = True
-
-ser = Ser()
-video = Video()
-mqtt = MQTT()
-ui = UI()
-
-hp = 100
-last_hit_cnt = None
+FULL_SCREEN = False
 
 
-def update_com():
-    global hp, last_hit_cnt
+class Watch:
 
-    # 设置颜色
-    ui.set_color(ser.color)
+    def __init__(self):
+        self.data = None
 
-    # 设置串口状态
-    ui.set_serial_status(ser.is_connected, ser.tx_rssi, ser.rx_rssi)
+    def update(self, data) -> bool:
+        if data != self.data:  # 跳变
+            if data is not None: # 不是断联跳变
+                if self.data is not None:  # 不是第一次跳变
+                    self.data = data
+                    return True
+        self.data = data
+        return False
 
-    # 击打检测
-    hit_cnt = ser.hit_cnt
-    if hit_cnt != None:  # 串口连上了
-        if hit_cnt != last_hit_cnt:  # 跳变
-            if last_hit_cnt != None:  # 不是连上的第一次跳变
-                hp -= 1
-                ui.trigger_hit()
-    last_hit_cnt = ser.hit_cnt
-
-    # 设置血量
-    if ser.color == 'red':
-        ui.set_red_hp(hp)
-    elif ser.color == 'blue':
-        ui.set_blue_hp(hp)
-
-    # 设置串口
-    ser.set_port(ui.get_serial_port())
-
-    # 设置键鼠报文
-    ser.dbus_packet = ui.get_dbus_packet()
+    def reset(self):
+        self.data = None
 
 
-def update_video():
-    ui.set_frame(video.frame)
-    ui.set_video_fps(video.fps)
-    video.set_source(ui.get_video_source())
+class Game:
+    def __init__(self):
+        self.uart = UART()
+        self.video = Video()
+        self.mqtt = MQTT()
+        self.ui = UI()
 
+        # 状态变量
+        self.hp = 100
+        self.watch_hit_cnt = Watch()
+        self.watch_color = Watch()
+        self.watch_reset_hp_ms = Watch()
+        self.watch_yellow_card_ms = Watch()
+        self.yellow_card_start_time = None
 
-last_yellow_card_ms = None
-yellow_card_local = None
-last_reset_hp_ms = None
-last_color = None
+    def start_and_loop(self):
+        # 启动各模块的线程
+        self.uart.start()
+        self.video.start()
+        self.mqtt.start()
 
+        # 创建定时任务
+        timer = QtCore.QTimer()
+        timer.timeout.connect(self._update)
+        timer.start(10)  # 100Hz
 
-def update_mqtt():
-    global hp, last_yellow_card_ms, last_reset_hp_ms, last_color, yellow_card_local
+        # UI主循环
+        if FULL_SCREEN:
+            self.ui.loop()
+        else:
+            self.ui.loop((1280, 720))
 
-    # MQTT频率
-    ui.set_mqtt_freq(mqtt.freq)
+    def _update(self):
+        self._update_ui()
+        self._update_com()
+        self._update_video()
+        self._update_mqtt()
 
-    # 顶部比赛信息
-    ui.set_countdown(mqtt.referee_msg["countdown"])
-    ui.set_red_name(mqtt.referee_msg["red"]["name"])
-    ui.set_blue_name(mqtt.referee_msg["blue"]["name"])
-    ui.set_red_hp(mqtt.referee_msg["red"]["hp"])
-    ui.set_blue_hp(mqtt.referee_msg["blue"]["hp"])
+    def _update_ui(self):
+        # 1. 从串口更新数据
+        
+        # 串口连接状态
+        self.ui.set_uart_connect_state(self.uart.connect_state)
+        
+        # RSSI
+        self.ui.set_rssi(self.uart.tx_rssi, self.uart.rx_rssi)
+        
+        # 颜色
+        color = self.uart.color
+        self.ui.set_color(color)
+        
+        # 击打检测
+        if self.watch_hit_cnt.update(self.uart.hit_cnt):
+            if self.uart.hit_cnt != 0: # 防止装甲板重启后扣血
+                self.hp -= 1
+                self.ui.trigger_hit()
+        
+        # 设置血量
+        if color == 'red':
+            self.ui.set_red_hp(self.hp)
+        elif color == 'blue':
+            self.ui.set_blue_hp(self.hp)
 
-    # 颜色变化时，防止意外的黄牌警告和重置血量
-    if last_color != ser.color:
-        last_yellow_card_ms = None
-        last_reset_hp_ms = None
-    last_color = ser.color
+        # 2. 从图传更新数据
+        self.ui.set_frame(self.video.frame)
+        self.ui.set_video_fps(self.video.fps)
 
-    # 黄牌警告
-    if ser.color:  # 串口连上了，能获取到颜色
-        yellow_card_ms = mqtt.referee_msg[ser.color]["yellow_card_ms"]
-        if yellow_card_ms is not None:  # MQTT连上了
-            if yellow_card_ms != last_yellow_card_ms:  # 跳变
-                if last_yellow_card_ms is not None:  # 不是连上的第一次跳变
-                    hp -= 10  # 扣血10%
-                    yellow_card_local = time.time()
-        last_yellow_card_ms = yellow_card_ms
+        # 3. 从MQTT更新数据
+        # MQTT频率
+        self.ui.set_mqtt_freq(self.mqtt.freq)
 
-    # 中心文字
-    state = mqtt.referee_msg["state"]
-    txt = mqtt.referee_msg["txt"]
-    countdown = mqtt.referee_msg["countdown"]
-    RED = QtGui.QColor(255, 84, 84)
-    BLUE = QtGui.QColor(88, 140, 255)
-    if state == 1:  # 红方胜
-        if ser.color == "red":
-            ui.set_center_txt("胜利", txt, RED)
-        elif ser.color == "blue":
-            ui.set_center_txt("失败", txt)
-    elif state == 2:  # 蓝方胜
-        if ser.color == "red":
-            ui.set_center_txt("失败", txt)
-        elif ser.color == "blue":
-            ui.set_center_txt("胜利", txt, BLUE)
-    elif state == 3:  # 平局
-        ui.set_center_txt("平局", txt)
-    elif yellow_card_local is not None:  # 黄牌警告未结束
-        remaining = int(round(yellow_card_local + 5 - time.time()))
-        if remaining <= 0:
-            yellow_card_local = None
-        ui.set_center_txt("黄牌", f"扣血10点，{remaining}秒后消失", "yellow")
-    elif countdown and countdown >= -5 and countdown <= 0:
-        ui.set_center_txt(str(-countdown), "比赛即将开始")
-    else:
-        ui.set_center_txt("", "")
+        # 顶部比赛信息
+        self.ui.set_countdown(self.mqtt.referee_msg["countdown"])
+        self.ui.set_red_name(self.mqtt.referee_msg["red"]["name"])
+        self.ui.set_blue_name(self.mqtt.referee_msg["blue"]["name"])
+        self.ui.set_red_hp(self.mqtt.referee_msg["red"]["hp"])
+        self.ui.set_blue_hp(self.mqtt.referee_msg["blue"]["hp"])
 
-    # 重置血量
-    if ser.color:  # 串口连上了，能获取到颜色
-        reset_hp_ms = mqtt.referee_msg[ser.color]["reset_hp_ms"]
-        if reset_hp_ms is not None:  # MQTT连上了
-            if reset_hp_ms != last_reset_hp_ms:  # 跳变
-                if last_reset_hp_ms is not None:  # 不是连上的第一次跳变
-                    hp = 100
-        last_reset_hp_ms = reset_hp_ms
+        # 颜色变化时，防止额外的重置血量和黄牌警告
+        if self.watch_color.update(color):
+            self.watch_reset_hp_ms.reset()
+            self.watch_yellow_card_ms.reset()
 
-    # 发送MQTT消息
-    mqtt.set_broker_url(ui.get_mqtt_url())
-    mqtt.color = ser.color
-    mqtt.client_msg = {"hp": hp,
-                       "com_is_connected": ser.is_connected,
-                       "video_fps": video.fps,
-                       "tx_rssi": ser.tx_rssi,
-                       "rx_rssi": ser.rx_rssi
-                       }
+        # 重置血量
+        if color:  # 串口连上了，能获取到颜色
+            reset_hp_ms = self.mqtt.referee_msg[color]["reset_hp_ms"]
+            if self.watch_reset_hp_ms.update(reset_hp_ms):
+                self.hp = 100
 
+        # 黄牌警告
+        if color:  # 串口连上了，能获取到颜色
+            yellow_card_ms = self.mqtt.referee_msg[color]["yellow_card_ms"]
+            if self.watch_yellow_card_ms.update(yellow_card_ms):
+                self.hp -= 10  # 扣血10%
+                self.yellow_card_start_time = time.time()
 
-def update():
-    update_com()
-    update_video()
-    update_mqtt()
+        # 中心文字
+        state = self.mqtt.referee_msg["state"]
+        txt = self.mqtt.referee_msg["txt"]
+        countdown = self.mqtt.referee_msg["countdown"]
+        if state == 1:  # 红方胜
+            if self.uart.color == "red":
+                RED = QtGui.QColor(255, 84, 84)
+                self.ui.set_center_txt("胜利", txt, RED)
+            elif self.uart.color == "blue":
+                self.ui.set_center_txt("失败", txt, "white")
+        elif state == 2:  # 蓝方胜
+            if self.uart.color == "red":
+                self.ui.set_center_txt("失败", txt, "white")
+            elif self.uart.color == "blue":
+                BLUE = QtGui.QColor(88, 140, 255)
+                self.ui.set_center_txt("胜利", txt, BLUE)
+        elif state == 3:  # 平局
+            self.ui.set_center_txt("平局", txt, "white")
+        elif self.yellow_card_start_time is not None:  # 黄牌警告未结束
+            remaining = int(round(self.yellow_card_start_time + 5 - time.time()))
+            if remaining <= 0:
+                self.yellow_card_start_time = None
+            self.ui.set_center_txt("黄牌", f"扣血10点，{remaining}秒后消失", "yellow")
+        elif countdown and countdown >= -5 and countdown <= 0:
+            self.ui.set_center_txt(str(-countdown), "比赛即将开始", "white")
+        else:
+            self.ui.set_center_txt("", "")
+
+    def _update_com(self):
+        # 设置串口号
+        self.uart.set_port(self.ui.get_serial_port())
+        
+        # 设置键鼠报文
+        self.uart.dbus_packet = self.ui.get_dbus_packet()
+
+    def _update_video(self):
+        # 设置视频源
+        self.video.set_source(self.ui.get_video_source())
+
+    def _update_mqtt(self):
+        # 设置MQTT地址
+        self.mqtt.set_broker_url(self.ui.get_mqtt_url())
+
+        # 设置MQTT颜色
+        self.mqtt.color = self.uart.color
+
+        # 设置MQTT消息
+        self.mqtt.client_msg = {"hp": self.hp,
+                                "uart_connect_state": self.uart.connect_state,
+                                "video_fps": self.video.fps,
+                                "tx_rssi": self.uart.tx_rssi,
+                                "rx_rssi": self.uart.rx_rssi
+                                }
 
 
 def main():
     logging.basicConfig(level=logging.ERROR, format='%(asctime)s | %(levelname)s | %(name)s | %(message)s')
 
-    ser.start()
-    video.start()
-    mqtt.start()
-
-    timer = QtCore.QTimer()
-    timer.timeout.connect(update)
-    timer.start(10)
-
-    if FULL_SCREEN:
-        ui.loop()
-    else:
-        ui.loop((1280, 720))
+    game = Game()
+    game.start_and_loop()
 
 
 if __name__ == "__main__":

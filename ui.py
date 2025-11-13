@@ -240,6 +240,7 @@ class ToggleSwitch(QtWidgets.QCheckBox):
     一个自定义的、类似手机UI的滑动开关控件。
     它继承自 QCheckBox，因此拥有其所有功能和信号。
     """
+
     def __init__(self, parent=None, bg_color="#777", circle_color="#FFF", active_color="#3478F6"):
         super().__init__(parent)
         self.setFixedSize(52, 28)
@@ -253,7 +254,7 @@ class ToggleSwitch(QtWidgets.QCheckBox):
         self._circle_position = 3
         self.animation = QtCore.QPropertyAnimation(self, b"circle_position", self)
         self.animation.setEasingCurve(QtCore.QEasingCurve.OutCubic)
-        self.animation.setDuration(200) # 动画时长 ms
+        self.animation.setDuration(200)  # 动画时长 ms
 
         self.stateChanged.connect(self.start_animation)
 
@@ -278,7 +279,7 @@ class ToggleSwitch(QtWidgets.QCheckBox):
         p = QtGui.QPainter(self)
         p.setRenderHint(QtGui.QPainter.Antialiasing)
         p.setPen(QtCore.Qt.NoPen)
-        
+
         # 绘制背景
         rect = QtCore.QRect(0, 0, self.width(), self.height())
         if self.isChecked():
@@ -437,7 +438,7 @@ class UIBase(QtWidgets.QMainWindow):
         self.hit_anim.setEasingCurve(QtCore.QEasingCurve.OutCubic)
 
         # 状态变量
-        self.serial_is_connected = False
+        self.uart_connect_state = False
         self.video_fps = None
         self.mqtt_freq = None
         self.tx_rssi = None
@@ -629,10 +630,10 @@ class UIBase(QtWidgets.QMainWindow):
         l4 = QtWidgets.QLabel("大屏模式")
         l4.setFixedWidth(label_w)
         l4.setFont(self._font_scaled(0.022))
-        self.big_screen_mode_check = ToggleSwitch(self) # <-- 使用新的开关控件
+        self.big_screen_mode_check = ToggleSwitch(self)  # <-- 使用新的开关控件
         r4.addWidget(l4)
         r4.addWidget(self.big_screen_mode_check)
-        r4.addStretch(1) # 添加一个伸缩项，让开关靠左
+        r4.addStretch(1)  # 添加一个伸缩项，让开关靠左
         layout.addWidget(row4)
         # --- 新增代码结束 ---
 
@@ -694,10 +695,12 @@ class UIBase(QtWidgets.QMainWindow):
         self.armor_label.setFixedWidth(inner_w)
 
     def _update_status(self):
-        if not self.serial_is_connected:
-            serial_txt = "<span style='color:#ff5a5a;'>串口: 未连接</span>"
-        else:
-            serial_txt = "<span style='color:#eaeaea;'>串口: 已连接</span>"
+        if self.uart_connect_state == 0:
+            serial_txt = "<span style='color:#ff5a5a;'>串口: USB未连接</span>"
+        elif self.uart_connect_state == 1:
+            serial_txt = "<span style='color:#ff5a5a;'>串口: 无线未连接</span>"
+        elif self.uart_connect_state == 2:
+            serial_txt = "<span style='color:#eaeaea;'>串口: 无线已连接</span>"
 
         if self.video_fps is None:
             video_txt = "<span style='color:#ff5a5a;'>图传: 未连接</span>"
@@ -794,7 +797,7 @@ class UIBase(QtWidgets.QMainWindow):
     def _center_menu(self):
         W, H = self.width(), self.height()
         panel_w = int(W * 0.40)
-        panel_h = int(H * 0.62) # 适当增加高度以容纳新选项
+        panel_h = int(H * 0.62)  # 适当增加高度以容纳新选项
         self.menu_panel.setGeometry(
             (W - panel_w) // 2, (H - panel_h) // 2, panel_w, panel_h)
 
@@ -995,8 +998,8 @@ class UI(UIBase):
             self.countdown_banner.set_warning(False)
             # bgm
             bgm_start_time = time.time() - (120 - -seconds)
-        
-        if abs(bgm_start_time - self.bgm_start_time) > 2: # 最大允许bgm 2秒误差
+
+        if abs(bgm_start_time - self.bgm_start_time) > 2:  # 最大允许bgm 2秒误差
             position = time.time() - bgm_start_time
             if position < 300:
                 self.media_player.setPosition(int(position * 1000))
@@ -1021,8 +1024,11 @@ class UI(UIBase):
         if self.color == "blue":
             self.self_bar.set_value(hp)
 
-    def set_serial_status(self, is_connected, tx_rssi, rx_rssi):
-        self.serial_is_connected = is_connected
+    def set_uart_connect_state(self, state):
+        self.uart_connect_state = state
+        self._update_status()
+
+    def set_rssi(self, tx_rssi, rx_rssi):
         self.tx_rssi = tx_rssi
         self.rx_rssi = rx_rssi
         self._update_status()
@@ -1032,17 +1038,6 @@ class UI(UIBase):
         self._update_status()
 
     def set_center_txt(self, line1: str, line2: str, color="white"):
-        """
-        设置屏幕中央的大字提示。
-        如果 line1 和 line2 都为空，则隐藏提示。
-
-        Args:
-            line1 (str): 第一行文本 (较大)。
-            line2 (str): 第二行文本 (较小)。
-            color (QColor | str | tuple, optional): 文本颜色。
-                   可以是 "red", "#FF0000", (255,0,0) 等格式。
-                   默认为 None (白色)。
-        """
         self.overlay.set_center_text(line1, line2, color)
 
     def get_serial_port(self) -> str | None:
@@ -1265,24 +1260,24 @@ def test_UI():
     countdown = 15
     ui.set_countdown(countdown)
 
-    def tick_countdown():
+    def update_countdown():
         nonlocal countdown
         countdown = countdown - 1 if countdown > 0 else 15
         ui.set_countdown(countdown)
 
     timer_countdown = QtCore.QTimer()
-    timer_countdown.timeout.connect(tick_countdown)
+    timer_countdown.timeout.connect(update_countdown)
     timer_countdown.start(1000)
 
     # 颜色切换演示
-    color_cycle = ["red", "blue", None]
+    colors = ["red", "blue", None]
     color_idx = 0
-    ui.set_color(color_cycle[color_idx])
+    ui.set_color(colors[color_idx])
 
     def update_color():
         nonlocal color_idx
-        color_idx = (color_idx + 1) % len(color_cycle)
-        ui.set_color(color_cycle[color_idx])
+        color_idx = (color_idx + 1) % len(colors)
+        ui.set_color(colors[color_idx])
 
     timer_color = QtCore.QTimer()
     timer_color.timeout.connect(update_color)
@@ -1314,19 +1309,21 @@ def test_UI():
     timer_hp.start(500)
 
     # 状态切换演示
-    status_states = [
-        {"fps": None, "serial": (False, None, None), "server": None},
-        {"fps": 60, "serial": (True, -80, -81), "server": 35},
+    status = [
+        {"video_fps": None, "uart_connect_state": 0, "tx_rssi": None, "rx_rssi": None, "mqtt_freq": None},
+        {"video_fps": 14, "uart_connect_state": 1, "tx_rssi": -20, "rx_rssi": -21, "mqtt_freq": 10},
+        {"video_fps": 15, "uart_connect_state": 2, "tx_rssi": -21, "rx_rssi": -20, "mqtt_freq": 9}
     ]
     status_idx = 0
 
     def update_status():
         nonlocal status_idx
-        s = status_states[status_idx]
-        ui.set_video_fps(s["fps"])
-        ui.set_serial_status(s["serial"][0], s["serial"][1], s["serial"][2])
-        ui.set_mqtt_freq(s["server"])
-        status_idx = (status_idx + 1) % len(status_states)
+        s = status[status_idx]
+        ui.set_video_fps(s["video_fps"])
+        ui.set_uart_connect_state(s["uart_connect_state"])
+        ui.set_rssi(s["tx_rssi"], s["rx_rssi"])
+        ui.set_mqtt_freq(s["mqtt_freq"])
+        status_idx = (status_idx + 1) % len(status)
 
     timer_status = QtCore.QTimer()
     timer_status.timeout.connect(update_status)
@@ -1336,21 +1333,21 @@ def test_UI():
     team_names = [
         ("Red Team Alpha", "Blue Team Beta"),
         ("Crimson Vanguard", "Cobalt Sentinels"),
-        ("红方队伍", "蓝方队伍"),
+        ("红方队伍", "蓝方队伍")
     ]
     name_idx = 0
     # 初始设置
     ui.set_red_name(team_names[name_idx][0])
     ui.set_blue_name(team_names[name_idx][1])
 
-    def update_names():
+    def update_name():
         nonlocal name_idx
         name_idx = (name_idx + 1) % len(team_names)
         ui.set_red_name(team_names[name_idx][0])
         ui.set_blue_name(team_names[name_idx][1])
 
     timer_names = QtCore.QTimer()
-    timer_names.timeout.connect(update_names)
+    timer_names.timeout.connect(update_name)
     timer_names.start(4000)
 
     # 受击打演示

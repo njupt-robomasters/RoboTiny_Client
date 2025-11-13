@@ -3,27 +3,29 @@ import serial
 import threading
 import time
 import logging
+from typing import Optional
 
 SEND_FREQ = 100
+AIR_TIMEOUT_MS = 100
 
 
-class Ser(threading.Thread):
+class UART(threading.Thread):
     RED = 255 << 16
     BLUE = 255
 
     def __init__(self, level=logging.WARNING):
         super().__init__(daemon=True)
 
-        self.logger = logging.getLogger("Ser")
+        self.logger = logging.getLogger("SerialPort")
         self.logger.setLevel(level)
 
         # 读取
-        self.is_connected: bool = False
-        self.color: str = None
-        self.hit_cnt: int = None
-        self.tx_rssi: int = None
-        self.rx_rssi: int = None
-        self.last_air_ms: int = None
+        self.connect_state: int = 0 # 0->未连接串口，1->无线未连接，2->无线已连接
+        self.color: Optional[str] = None
+        self.hit_cnt: Optional[int] = None
+        self.tx_rssi: Optional[int] = None
+        self.rx_rssi: Optional[int] = None
+        self.last_air_ms: Optional[int] = None
 
         # 写入
         self.dbus_packet = bytes(10)
@@ -85,17 +87,16 @@ class Ser(threading.Thread):
             self.logger.warning(f"串口数据解码错误: {e}")
             return
 
-        self.logger.debug(f"串口读到数据: {line}")
+        # self.logger.debug(f"串口读到数据: {line}")
 
         try:
             parts = line.split(",")
             if len(parts) == 5:
-                self.is_connected = True
+                # 串口报文格式：color,hit_cnt,tx_rssi,rx_rssi,last_air_ms
 
-                color = int(parts[0])
-                if color == self.RED:
+                if int(parts[0]) == self.RED:
                     self.color = "red"
-                elif color == self.BLUE:
+                elif int(parts[0]) == self.BLUE:
                     self.color = "blue"
                 else:
                     self.color = None
@@ -104,26 +105,29 @@ class Ser(threading.Thread):
                 self.tx_rssi = self._filter(self.tx_rssi, int(parts[2]))
                 self.rx_rssi = self._filter(self.rx_rssi, int(parts[3]))
                 self.last_air_ms = int(parts[4])
-                self.logger.debug(f"{self.color=:} {self.hit_cnt=:} {self.tx_rssi=:} {self.rx_rssi=:} {self.last_air_ms=:}")
 
-                if self.last_air_ms > 100:  # 延迟大于100ms的 considered as timeout
-                    self.color = None
-                    self.hit_cnt = None
-                    self.tx_rssi = None
-                    self.rx_rssi = None
-                    self.last_air_ms = None
+                self.logger.debug(f"{self.color=:} {self.hit_cnt=:} {self.tx_rssi=:} {self.rx_rssi=:} {self.last_air_ms=:}")
             else:
-                self.logger.warning(f"串口数据格式错误，期望5个字段，实际收到{len(parts)}个")
+                self.logger.warning(f"串口数据格式错误, 期望5个字段, 实际收到{len(parts)}个")
+                self.connect_state = 0
+                return
         except Exception as e:
             self.logger.warning(f"串口数据解析报错: {e}")
+            self.connect_state = 0
+            return
+
+        if self.last_air_ms <= AIR_TIMEOUT_MS:
+            self.connect_state = 2
+        else:
+            self.connect_state = 1
 
     def _serial_write(self):
         if time.time() - self._last_send_time < 1 / SEND_FREQ:
             return
 
         try:
-            bytes_written = self._serial.write(self.dbus_packet)
-            self.logger.debug(f"串口发送数据: {self.dbus_packet.hex()}, 字节数: {bytes_written}")
+            self._serial.write(self.dbus_packet)
+            # self.logger.debug(f"串口发送数据: {self.dbus_packet.hex()}")
         except Exception as e:
             self.logger.error(f"串口发送报错: {e}")
             self._reset()
@@ -132,15 +136,18 @@ class Ser(threading.Thread):
 
     def _reset(self):
         if self._serial:
-            self._serial.close()
+            try:
+                self._serial.close()
+            except Exception as e:
+                logging.warning(f"关闭串口失败: {e}")
             self._serial = None
 
+        self.connect_state = 0
         self.color = None
         self.hit_cnt = None
         self.tx_rssi = None
         self.rx_rssi = None
         self.last_air_ms = None
-        self.is_connected = False
 
     def _filter(self, old, new):
         if new is None:
@@ -153,9 +160,9 @@ class Ser(threading.Thread):
 if __name__ == "__main__":
     logging.basicConfig(format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
 
-    ser = Ser(logging.INFO)
+    ser = UART(logging.DEBUG)
     ser.start()
-    ser.set_port("COM60")
+    ser.set_port("COM76")
 
     while True:
         time.sleep(1)

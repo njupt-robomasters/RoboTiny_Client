@@ -7,6 +7,7 @@ import json
 from collections import deque
 import time
 import logging
+from typing import Optional
 
 PUBLISH_FREQ = 10
 
@@ -29,7 +30,7 @@ class MQTT(threading.Thread):
         self.referee_msg = self.DEFAULT_REFEREE_MSG
 
         # 可写入
-        self.color: str = None
+        self.color: Optional[str] = None # 为None时不发送MQTT消息
         self.client_msg = {"hp": 100, "com_is_connected": False, "video_fps": 0, "tx_rssi": None, "rx_rssi": None}
 
         self._broker_url: str = None
