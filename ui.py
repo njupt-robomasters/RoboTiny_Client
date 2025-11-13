@@ -1,9 +1,11 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PySide6.QtCore import QUrl
+from serial.tools import list_ports
 
 import numpy as np
 import re
+import os
 import sys
 import time
 import logging
@@ -14,10 +16,15 @@ INPUT_MAX_DX = 32768   # 每秒允许的最大鼠标X位移（像素），映射
 INPUT_MAX_DY = 32768   # 每秒允许的最大鼠标Y位移（像素），映射到±32768
 INPUT_MAX_DZ = 32768   # 每秒允许的最大滚轮步数（每步=一格=delta/120），映射到±32768
 
-try:
-    from serial.tools import list_ports
-except Exception:
-    list_ports = None
+
+def get_resource(path):
+    if getattr(sys, 'frozen', False):
+        # 打包后的情况
+        base_path = sys._MEIPASS
+        return os.path.join(base_path, path)
+    else:
+        # 开发环境
+        return path
 
 
 class Overlay(QtWidgets.QWidget):  # 叠加层（准星 + 受击晕影 + 居中大字）
@@ -898,7 +905,7 @@ class UI(UIBase):
         self.media_player = QMediaPlayer()
         self.audio_output = QAudioOutput()
         self.media_player.setAudioOutput(self.audio_output)
-        self.media_player.setSource(QUrl.fromLocalFile("./assets/bgm.mp3"))
+        self.media_player.setSource(QUrl.fromLocalFile(get_resource("./assets/bgm.mp3")))
         self.audio_output.setVolume(1.0)  # 设置音量（0.0 - 1.0）
         self.bgm_start_time = 0
 
@@ -988,6 +995,7 @@ class UI(UIBase):
             if seconds == 0:
                 self.media_player.stop()
                 self.bgm_start_time = 0
+                return
             else:
                 bgm_start_time = time.time() - 120 - (180 - seconds)
         else:

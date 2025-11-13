@@ -7,7 +7,7 @@ from video import Video
 from mqtt import MQTT
 from ui import UI
 
-FULL_SCREEN = False
+FULL_SCREEN = True
 
 
 class Watch:
