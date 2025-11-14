@@ -10,7 +10,7 @@ import sys
 import time
 import logging
 
-DEFAULT_BROKER_URL = "mqtt://192.168.10.1:1883"
+DEFAULT_BROKER_URL = "mqtt://192.168.10.2:1883"
 
 INPUT_MAX_DX = 32768   # 每秒允许的最大鼠标X位移（像素），映射到±32768
 INPUT_MAX_DY = 32768   # 每秒允许的最大鼠标Y位移（像素），映射到±32768
@@ -458,6 +458,7 @@ class UIBase(QtWidgets.QMainWindow):
 
         self._update_status()
         self._update_ui_for_big_screen_mode()  # <-- 新增：应用初始的大屏模式设置
+        self._auto_select_first_serial()
 
     # ============== 内部方法 ==============
 
@@ -700,6 +701,26 @@ class UIBase(QtWidgets.QMainWindow):
         self.self_bar.setFixedWidth(inner_w)
         self.status_label.setFixedWidth(inner_w)
         self.armor_label.setFixedWidth(inner_w)
+
+    def _auto_select_first_serial(self):
+        """在UI启动时自动扫描并选择第一个可用的串口"""
+        self.logger.info("Auto-detecting serial ports on startup...")
+        self._refresh_serial_ports()  # 填充下拉列表
+
+        # 检查 QComboBox 中是否有有效项目
+        if self.serial_combo.count() > 0:
+            first_port_device = self.serial_combo.itemData(0)
+            # 确保它不是 "无可用串口" 的占位符 "NA"
+            if first_port_device and str(first_port_device).upper() != "NA":
+                # 将选择的端口保存到实例变量中，以便程序其他部分使用
+                self.serial_port = first_port_device
+                self.logger.info(f"Automatically selected first available serial port: {self.serial_port}")
+                # 注意：我们不需要在这里设置 QComboBox 的 currentIndex，
+                # 因为 _refresh_serial_ports 方法在之后被调用时会根据 self.serial_port 的值自动恢复选择。
+            else:
+                self.logger.warning("No valid serial ports found on startup.")
+        else:
+            self.logger.warning("No serial ports found on startup.")
 
     def _update_status(self):
         if self.uart_connect_state == 0:
