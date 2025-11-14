@@ -1,6 +1,7 @@
 from PySide6 import QtCore, QtGui, QtWidgets
-from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PySide6.QtCore import QUrl
+from PySide6.QtGui import QIcon
+from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 from serial.tools import list_ports
 
 import numpy as np
@@ -309,6 +310,7 @@ class ToggleSwitch(QtWidgets.QCheckBox):
 class UIBase(QtWidgets.QMainWindow):
     def __init__(self, level=logging.WARNING):
         self.app = QtWidgets.QApplication(sys.argv)
+        self.app.setWindowIcon(QIcon(get_resource("./assets/logo.png")))
 
         super().__init__()
 
