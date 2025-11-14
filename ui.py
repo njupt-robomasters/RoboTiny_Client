@@ -407,28 +407,28 @@ class UIBase(QtWidgets.QMainWindow):
         bl.addWidget(self.self_bar)
 
         # 第一行：状态文本
-        self.status_label = QtWidgets.QLabel("", objectName="statusBar")
+        self.status_label1 = QtWidgets.QLabel("", objectName="statusBar")
         f2 = QtGui.QFont(self.font_main)
         f2.setPointSize(13)
-        self.status_label.setFont(f2)
-        self.status_label.setTextFormat(QtCore.Qt.RichText)
-        self.status_label.setStyleSheet("margin:0px; padding:0px;")
-        self.status_label.setWordWrap(False)
-        self.status_label.setAlignment(QtCore.Qt.AlignCenter)
-        self.status_label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
-        bl.addWidget(self.status_label)
+        self.status_label1.setFont(f2)
+        self.status_label1.setTextFormat(QtCore.Qt.RichText)
+        self.status_label1.setStyleSheet("margin:0px; padding:0px;")
+        self.status_label1.setWordWrap(False)
+        self.status_label1.setAlignment(QtCore.Qt.AlignCenter)
+        self.status_label1.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        bl.addWidget(self.status_label1)
 
         # 第二行：Armor RSSI 文本
-        self.armor_label = QtWidgets.QLabel("", objectName="armorBar")
+        self.status_label2 = QtWidgets.QLabel("", objectName="armorBar")
         f3 = QtGui.QFont(self.font_main)
         f3.setPointSize(13)
-        self.armor_label.setFont(f3)
-        self.armor_label.setTextFormat(QtCore.Qt.RichText)
-        self.armor_label.setStyleSheet("margin:0px; padding:0px;")
-        self.armor_label.setWordWrap(False)
-        self.armor_label.setAlignment(QtCore.Qt.AlignCenter)
-        self.armor_label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
-        bl.addWidget(self.armor_label)
+        self.status_label2.setFont(f3)
+        self.status_label2.setTextFormat(QtCore.Qt.RichText)
+        self.status_label2.setStyleSheet("margin:0px; padding:0px;")
+        self.status_label2.setWordWrap(False)
+        self.status_label2.setAlignment(QtCore.Qt.AlignCenter)
+        self.status_label2.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        bl.addWidget(self.status_label2)
 
         # 设置面板与遮罩
         self.menu_mask = QtWidgets.QWidget(self, objectName="menuMask")
@@ -673,10 +673,10 @@ class UIBase(QtWidgets.QMainWindow):
         W, H = self.width(), self.height()
 
         # 计算两行文本的宽度，取最大值作为目标内部宽度
-        text_status = self._plain_text(self.status_label.text())
-        text_armor = self._plain_text(self.armor_label.text())
-        fm_status = QtGui.QFontMetrics(self.status_label.font())
-        fm_armor = QtGui.QFontMetrics(self.armor_label.font())
+        text_status = self._plain_text(self.status_label1.text())
+        text_armor = self._plain_text(self.status_label2.text())
+        fm_status = QtGui.QFontMetrics(self.status_label1.font())
+        fm_armor = QtGui.QFontMetrics(self.status_label2.font())
         text_w_status = fm_status.horizontalAdvance(text_status) + 18
         text_w_armor = fm_armor.horizontalAdvance(text_armor) + 18
         text_w = max(text_w_status, text_w_armor)
@@ -701,8 +701,8 @@ class UIBase(QtWidgets.QMainWindow):
 
         inner_w = self.bottom_left_panel.width() - panel_margin_lr
         self.self_bar.setFixedWidth(inner_w)
-        self.status_label.setFixedWidth(inner_w)
-        self.armor_label.setFixedWidth(inner_w)
+        self.status_label1.setFixedWidth(inner_w)
+        self.status_label2.setFixedWidth(inner_w)
 
     def _auto_select_first_serial(self):
         """在UI启动时自动扫描并选择第一个可用的串口"""
@@ -725,34 +725,33 @@ class UIBase(QtWidgets.QMainWindow):
             self.logger.warning("No serial ports found on startup.")
 
     def _update_status(self):
-        if self.uart_connect_state == 0:
-            serial_txt = "<span style='color:#ff5a5a;'>串口: USB未连接</span>"
-        elif self.uart_connect_state == 1:
-            serial_txt = "<span style='color:#ff5a5a;'>串口: 无线未连接</span>"
-        elif self.uart_connect_state == 2:
-            serial_txt = "<span style='color:#eaeaea;'>串口: 无线已连接</span>"
-
         if self.video_fps is None:
-            video_txt = "<span style='color:#ff5a5a;'>图传: 未连接</span>"
+            video_txt = "图传: <span style='color:#ff5a5a;'>未连接</span>"
         else:
-            video_txt = f"<span style='color:#eaeaea;'>图传: {self.video_fps:.0f} fps</span>"
+            video_txt = f"图传: <span style='color:#eaeaea;'>{self.video_fps:.0f} fps</span>"
 
         if self.mqtt_freq is None:
-            mqtt_txt = "<span style='color:#ff5a5a;'>MQTT: 未连接</span>"
+            mqtt_txt = "裁判端: <span style='color:#ff5a5a;'>未连接</span>"
         else:
-            mqtt_txt = f"<span style='color:#eaeaea;'>MQTT: {self.mqtt_freq:02.0f} Hz</span>"
+            mqtt_txt = f"裁判端: <span style='color:#eaeaea;'>{self.mqtt_freq:02.0f} Hz</span>"
 
-        html = f"<div style='text-align:center'>{serial_txt} | {video_txt} | {mqtt_txt}</div>"
-        self.status_label.setText(html)
+        self.status_label1.setText(f"<div style='text-align:center'>{mqtt_txt} | {video_txt}</div>")
+        
+        if self.uart_connect_state == 0:
+            uart_txt = "装甲板: <span style='color:#ff5a5a;'>串口未连接</span>"
+        elif self.uart_connect_state == 1:
+            uart_txt = "装甲板: <span style='color:#ff5a5a;'>无线未连接</span>"
+        elif self.uart_connect_state == 2:
+            uart_txt = "装甲板: <span style='color:#eaeaea;'>无线已连接</span>"
 
-        if self.tx_rssi is None or self.rx_rssi is None:
-            rssi_tx_txt = f"<span style='color:#ff5a5a;'>TX: 未连接 dBm</span>"
-            rssi_rx_txt = f"<span style='color:#ff5a5a;'>RX: 未连接 dBm</span>"
+        if self.uart_connect_state != 2 or self.tx_rssi is None or self.rx_rssi is None:
+            rssi_tx_txt = f"TX: <span style='color:#ff5a5a;'>未连接</span>"
+            rssi_rx_txt = f"RX: <span style='color:#ff5a5a;'>未连接</span>"
         else:
-            rssi_tx_txt = f"<span style='color:#eaeaea;'>TX: {self.tx_rssi:.0f} dBm</span>"
-            rssi_rx_txt = f"<span style='color:#eaeaea;'>RX: {self.rx_rssi:.0f} dBm</span>"
+            rssi_tx_txt = f"TX: <span style='color:#eaeaea;'>{self.tx_rssi:.0f} dBm</span>"
+            rssi_rx_txt = f"RX: <span style='color:#eaeaea;'>{self.rx_rssi:.0f} dBm</span>"
 
-        self.armor_label.setText(f"<div style='text-align:center'>{rssi_tx_txt} | {rssi_rx_txt}</div>")
+        self.status_label2.setText(f"<div style='text-align:center'>{uart_txt} | {rssi_tx_txt} | {rssi_rx_txt}</div>")
 
         self._update_bottom_panel_layout()
 
@@ -930,7 +929,7 @@ class UI(UIBase):
         self.media_player.setAudioOutput(self.audio_output)
         self.media_player.setSource(QUrl.fromLocalFile(get_resource("./assets/bgm.mp3")))
         self.audio_output.setVolume(1.0)  # 设置音量（0.0 - 1.0）
-        self.bgm_start_time = 0
+        self.bgm_start_time = None
 
         # 键鼠采样相关
         self._last_mouse_time = time.perf_counter()
@@ -1003,37 +1002,38 @@ class UI(UIBase):
         self.video_fps = fps
         self._update_status()
 
-    def set_countdown(self, seconds: int | None):
+    def set_countdown(self, seconds: float | None):
         if seconds is None:
             self.media_player.stop()
-            self.bgm_start_time = 0
+            self.bgm_start_time = None
             return
-
+        
+        seconds_int = int(round(seconds))
         bgm_start_time = self.bgm_start_time
-        if seconds >= 0:
-            m, s = seconds // 60, seconds % 60
+        if seconds_int >= 0:
+            m, s = seconds_int // 60, seconds_int % 60
             self.countdown_banner.set_text(f"{m}:{s:02d}")
             self.countdown_banner.set_warning(seconds <= 10)
             # bgm
             if seconds == 0:
                 self.media_player.stop()
-                self.bgm_start_time = 0
+                self.bgm_start_time = None
                 return
             else:
                 bgm_start_time = time.time() - 120 - (180 - seconds)
         else:
             # 显示负值，例如：-1:30 表示负1分30秒
-            abs_seconds = abs(seconds)
+            abs_seconds = abs(seconds_int)
             m, s = abs_seconds // 60, abs_seconds % 60
             self.countdown_banner.set_text(f"-{m}:{s:02d}")
             self.countdown_banner.set_warning(False)
             # bgm
             bgm_start_time = time.time() - (120 - -seconds)
 
-        if abs(bgm_start_time - self.bgm_start_time) > 2:  # 最大允许bgm 2秒误差
+        if self.bgm_start_time is None or abs(bgm_start_time - self.bgm_start_time) > 2:  # 最大允许bgm 2秒误差
             position = time.time() - bgm_start_time
             if position < 300:
-                self.media_player.setPosition(int(position * 1000))
+                self.media_player.setPosition(int(round(position * 1000)))
                 self.media_player.play()
                 self.bgm_start_time = bgm_start_time
 

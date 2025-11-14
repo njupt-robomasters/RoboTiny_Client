@@ -100,7 +100,11 @@ class Game:
         self.ui.set_mqtt_freq(self.mqtt.freq)
 
         # 顶部比赛信息
-        self.ui.set_countdown(self.mqtt.referee_msg["countdown"])
+        if self.mqtt.referee_msg["countdown_ms"] is not None:
+            countdown = self.mqtt.referee_msg["countdown_ms"] / 1000
+        else:
+            countdown = None
+        self.ui.set_countdown(countdown)
         self.ui.set_red_name(self.mqtt.referee_msg["red"]["name"])
         self.ui.set_blue_name(self.mqtt.referee_msg["blue"]["name"])
         self.ui.set_red_hp(self.mqtt.referee_msg["red"]["hp"])
@@ -127,7 +131,6 @@ class Game:
         # 中心文字
         state = self.mqtt.referee_msg["state"]
         txt = self.mqtt.referee_msg["txt"]
-        countdown = self.mqtt.referee_msg["countdown"]
         if state == 1:  # 红方胜
             if self.uart.color == "red":
                 RED = QtGui.QColor(255, 84, 84)
@@ -148,7 +151,7 @@ class Game:
                 self.yellow_card_start_time = None
             self.ui.set_center_txt("黄牌", f"扣血10点，{remaining}秒后消失", "yellow")
         elif countdown and countdown >= -5 and countdown <= 0:
-            self.ui.set_center_txt(str(-countdown), "比赛即将开始", "white")
+            self.ui.set_center_txt(str(int(round(-countdown))), "比赛即将开始", "white")
         else:
             self.ui.set_center_txt("", "")
 

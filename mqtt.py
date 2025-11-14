@@ -15,7 +15,7 @@ PUBLISH_FREQ = 10
 class MQTT(threading.Thread):
 
     DEFAULT_REFEREE_MSG = {
-        "countdown": None, "state": None, "txt": None,
+        "countdown_ms": None, "state": None, "txt": None,
         "red": {"name": None, "hp": None, "yellow_card_ms": None, "reset_hp_ms": None},
         "blue": {"name": None, "hp": None, "yellow_card_ms": None, "reset_hp_ms": None}
     }
@@ -69,7 +69,7 @@ class MQTT(threading.Thread):
                 continue
 
             self.logger.info(f"MQTT正在连接: {self._broker_url}")
-            self._client = MQTTClient(config={"auto_reconnect": False})
+            self._client = MQTTClient(config={"connection_timeout": 1, "auto_reconnect": False})
             try:
                 await self._client.connect(self._broker_url)
             except Exception as e:
