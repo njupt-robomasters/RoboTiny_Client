@@ -38,11 +38,19 @@ class Overlay(QtWidgets.QWidget):  # 叠加层（准星 + 受击晕影 + 居中�
         self.setAttribute(QtCore.Qt.WA_NoSystemBackground, True)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
         self.hit_progress = 0.0
+        self.crosshair_visible = True  # <-- 新增：准星可见性状态，默认为True
 
         # 用于居中大字的状态变量
         self.center_text_line1 = ""
         self.center_text_line2 = ""
         self.center_text_color = QtGui.QColor(255, 255, 255)
+
+    # <-- 新增：控制准星可见性的方法 -->
+    def setCrosshairVisible(self, visible: bool):
+        """设置准星是否可见"""
+        if self.crosshair_visible != visible:
+            self.crosshair_visible = visible
+            self.update()  # 请求重绘
 
     def set_center_text(self, line1: str, line2: str, color="white"):  # 如果未提供颜色，则默认为白色
         """设置居中大字的内容和颜色"""
@@ -67,18 +75,22 @@ class Overlay(QtWidgets.QWidget):  # 叠加层（准星 + 受击晕影 + 居中�
         p.setRenderHints(QtGui.QPainter.Antialiasing | QtGui.QPainter.SmoothPixmapTransform)
 
         # 准星
-        cx, cy = w // 2, h // 2
-        size = int(min(w, h) * 0.03)
-        gap = int(size * 0.25)
-        p.setPen(QtGui.QPen(QtGui.QColor(250, 250, 250, 230), 2))
-        p.drawLine(cx - size, cy, cx - gap, cy)
-        p.drawLine(cx + gap, cy, cx + size, cy)
-        p.drawLine(cx, cy - size, cx, cy - gap)
-        p.drawLine(cx, cy + gap, cx, cy + size)
-        p.drawEllipse(QtCore.QPoint(cx, cy), int(size * 0.18), int(size * 0.18))
+        # <-- 修改：仅在 crosshair_visible 为 True 时绘制 -->
+        if self.crosshair_visible:
+            cx, cy = w // 2, h // 2
+            size = int(min(w, h) * 0.03)
+            gap = int(size * 0.25)
+            p.setPen(QtGui.QPen(QtGui.QColor(250, 250, 250, 230), 2))
+            p.drawLine(cx - size, cy, cx - gap, cy)
+            p.drawLine(cx + gap, cy, cx + size, cy)
+            p.drawLine(cx, cy - size, cx, cy - gap)
+            p.drawLine(cx, cy + gap, cx, cy + size)
+            p.drawEllipse(QtCore.QPoint(cx, cy), int(size * 0.18), int(size * 0.18))
 
         # 受击晕影
         if self.hit_progress > 0:
+            # 即使准星隐藏，中心点坐标也需要计算
+            cx, cy = w // 2, h // 2
             edge_alpha = int(180 * (1.0 - self.hit_progress))
             radius = int((w ** 2 + h ** 2) ** 0.5 / 2)
             grad = QtGui.QRadialGradient(QtCore.QPointF(cx, cy), radius)
@@ -89,7 +101,7 @@ class Overlay(QtWidgets.QWidget):  # 叠加层（准星 + 受击晕影 + 居中�
             p.setPen(QtCore.Qt.NoPen)
             p.drawRect(0, 0, w, h)
 
-        # 居中大字
+        # 居中大字 (此部分逻辑不受准星可见性影响)
         if self.center_text_line1 or self.center_text_line2:
             p.save()  # 保存当前painter状态
 
@@ -223,13 +235,8 @@ class CountdownBanner(QtWidgets.QFrame):  # 倒计时
         self.label.setStyleSheet("color: rgb(255,100,100); letter-spacing: 1px; margin:0px;")
         lay.addWidget(self.label)
 
-        # 1. 使用 QFontMetrics 计算一个足够宽的字符串（例如 "-00:00"）的像素宽度
-        #    这样可以确保 banner 的宽度足以容纳所有可能的倒计时文本，防止跳变。
         font_metrics = QtGui.QFontMetrics(self.label.font())
-        # 使用一个 "模板字符串" 来确定最大宽度，"-00:00" 是一个不错的选择
         max_text_width = font_metrics.horizontalAdvance("-00:00")
-
-        # 2. 为 QLabel 设置一个固定的宽度。可以稍微增加一点像素作为安全边距。
         self.label.setFixedWidth(max_text_width + 10)
 
     def set_text(self, txt):
@@ -244,17 +251,11 @@ class CountdownBanner(QtWidgets.QFrame):  # 倒计时
 
 
 class ToggleSwitch(QtWidgets.QCheckBox):
-    """
-    一个自定义的、类似手机UI的滑动开关控件。
-    它继承自 QCheckBox，因此拥有其所有功能和信号。
-    """
-
     def __init__(self, parent=None, bg_color="#777", circle_color="#FFF", active_color="#3478F6"):
         super().__init__(parent)
         self.setFixedSize(52, 28)
         self.setCursor(QtCore.Qt.PointingHandCursor)
 
-        # 颜色
         self._bg_color = QtGui.QColor(bg_color)
         self._circle_color = QtGui.QColor(circle_color)
         self._active_color = QtGui.QColor(active_color)
@@ -262,7 +263,7 @@ class ToggleSwitch(QtWidgets.QCheckBox):
         self._circle_position = 3
         self.animation = QtCore.QPropertyAnimation(self, b"circle_position", self)
         self.animation.setEasingCurve(QtCore.QEasingCurve.OutCubic)
-        self.animation.setDuration(200)  # 动画时长 ms
+        self.animation.setDuration(200)
 
         self.stateChanged.connect(self.start_animation)
 
@@ -288,7 +289,6 @@ class ToggleSwitch(QtWidgets.QCheckBox):
         p.setRenderHint(QtGui.QPainter.Antialiasing)
         p.setPen(QtCore.Qt.NoPen)
 
-        # 绘制背景
         rect = QtCore.QRect(0, 0, self.width(), self.height())
         if self.isChecked():
             p.setBrush(self._active_color)
@@ -296,7 +296,6 @@ class ToggleSwitch(QtWidgets.QCheckBox):
             p.setBrush(self._bg_color)
         p.drawRoundedRect(rect, self.height() / 2, self.height() / 2)
 
-        # 绘制滑块
         p.setBrush(self._circle_color)
         p.drawEllipse(
             self._circle_position, 3, self.height() - 6, self.height() - 6
@@ -319,7 +318,6 @@ class UIBase(QtWidgets.QMainWindow):
 
         self.setWindowTitle("RoboMaster校内赛选手端")
 
-        # 屏幕与字体
         scr = QtWidgets.QApplication.primaryScreen().availableGeometry()
         self.screen_size = QtCore.QSize(scr.width(), scr.height())
         self.font_main = QtGui.QFont()
@@ -328,7 +326,6 @@ class UIBase(QtWidgets.QMainWindow):
         self.setFont(self.font_main)
         self.setStyleSheet(self._qss())
 
-        # 背景视频层
         central = QtWidgets.QWidget(objectName="central")
         self.setCentralWidget(central)
         lay = QtWidgets.QVBoxLayout(central)
@@ -339,47 +336,42 @@ class UIBase(QtWidgets.QMainWindow):
         self.bg_label.setScaledContents(False)
         lay.addWidget(self.bg_label)
 
-        # 叠加层（准星 + 受击晕影）
         self.overlay = Overlay(self.bg_label)
         self.overlay.setGeometry(0, 0, self.screen_size.width(), self.screen_size.height())
         self.overlay.raise_()
 
-        # 顶部 HUD与倒计时
         self.top_hud = QtWidgets.QWidget(self, objectName="topHud")
         self.top_layout = QtWidgets.QHBoxLayout(self.top_hud)
         self.top_layout.setContentsMargins(0, 0, 0, 0)
         self.top_layout.setSpacing(20)
 
-        # -- 红方信息 --
         self.red_team_widget = QtWidgets.QWidget(self.top_hud)
         red_layout = QtWidgets.QVBoxLayout(self.red_team_widget)
         red_layout.setContentsMargins(0, 0, 0, 0)
-        red_layout.setSpacing(2)  # 修改：减小间距
+        red_layout.setSpacing(2)
         self.red_name_label = QtWidgets.QLabel("红方队伍", objectName="redNameLabel")
         self.red_name_label.setAlignment(QtCore.Qt.AlignCenter)
         f_team = QtGui.QFont(self.font_main)
         f_team.setBold(True)
-        f_team.setPointSize(20)  # 修改：增大字体
+        f_team.setPointSize(20)
         self.red_name_label.setFont(f_team)
         self.red_bar_top = HealthBar(self.red_team_widget, label_text="红方", team="red", height=48)
         red_layout.addWidget(self.red_name_label)
         red_layout.addWidget(self.red_bar_top)
-        red_layout.addStretch(1)  # 新增：添加伸缩项，将内容推向顶部
+        red_layout.addStretch(1)
 
-        # -- 蓝方信息 --
         self.blue_team_widget = QtWidgets.QWidget(self.top_hud)
         blue_layout = QtWidgets.QVBoxLayout(self.blue_team_widget)
         blue_layout.setContentsMargins(0, 0, 0, 0)
-        blue_layout.setSpacing(2)  # 修改：减小间距
+        blue_layout.setSpacing(2)
         self.blue_name_label = QtWidgets.QLabel("蓝方队伍", objectName="blueNameLabel")
         self.blue_name_label.setAlignment(QtCore.Qt.AlignCenter)
         self.blue_name_label.setFont(f_team)
         self.blue_bar_top = HealthBar(self.blue_team_widget, label_text="蓝方", team="blue", height=48)
         blue_layout.addWidget(self.blue_name_label)
         blue_layout.addWidget(self.blue_bar_top)
-        blue_layout.addStretch(1)  # 新增：添加伸缩项，将内容推向顶部
+        blue_layout.addStretch(1)
 
-        # 倒计时
         self.countdown_banner = CountdownBanner(self.top_hud)
 
         self.top_layout.addStretch(1)
@@ -390,14 +382,12 @@ class UIBase(QtWidgets.QMainWindow):
         self.top_layout.addWidget(self.blue_team_widget, 2)
         self.top_layout.addStretch(1)
 
-        # 右上角按钮
         self.exit_btn = QtWidgets.QPushButton("退出", parent=self, objectName="exitBtn")
         self.exit_btn.clicked.connect(self.close)
         self.settings_btn = QtWidgets.QPushButton("设置", parent=self, objectName="settingsBtn")
         self.settings_btn.clicked.connect(self._open_menu)
         self._style_buttons_font()
 
-        # 左下角面板
         self.bottom_left_panel = QtWidgets.QFrame(self, objectName="bottomPanel")
         bl = QtWidgets.QVBoxLayout(self.bottom_left_panel)
         bl.setContentsMargins(10, 6, 10, 6)
@@ -406,7 +396,6 @@ class UIBase(QtWidgets.QMainWindow):
         self.self_bar.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
         bl.addWidget(self.self_bar)
 
-        # 第一行：状态文本
         self.status_label1 = QtWidgets.QLabel("", objectName="statusBar")
         f2 = QtGui.QFont(self.font_main)
         f2.setPointSize(13)
@@ -418,7 +407,6 @@ class UIBase(QtWidgets.QMainWindow):
         self.status_label1.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
         bl.addWidget(self.status_label1)
 
-        # 第二行：Armor RSSI 文本
         self.status_label2 = QtWidgets.QLabel("", objectName="armorBar")
         f3 = QtGui.QFont(self.font_main)
         f3.setPointSize(13)
@@ -430,7 +418,6 @@ class UIBase(QtWidgets.QMainWindow):
         self.status_label2.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
         bl.addWidget(self.status_label2)
 
-        # 设置面板与遮罩
         self.menu_mask = QtWidgets.QWidget(self, objectName="menuMask")
         self.menu_mask.hide()
         self.menu_mask.mousePressEvent = lambda e: self._cancel_menu()
@@ -439,14 +426,12 @@ class UIBase(QtWidgets.QMainWindow):
         self._build_menu_panel(self.menu_panel)
         self._menu_snapshot = None
 
-        # 动画
         self.hit_anim = QtCore.QPropertyAnimation(self.overlay, b"hitProgress")
         self.hit_anim.setDuration(700)
         self.hit_anim.setStartValue(0.0)
         self.hit_anim.setEndValue(1.0)
         self.hit_anim.setEasingCurve(QtCore.QEasingCurve.OutCubic)
 
-        # 状态变量
         self.uart_connect_state = False
         self.video_fps = None
         self.mqtt_freq = None
@@ -456,16 +441,13 @@ class UIBase(QtWidgets.QMainWindow):
         self.serial_port = None
         self.video_source = self.video_edit.text().strip()
         self.mqtt_url = self.server_edit.text().strip()
-        self.big_screen_mode = False  # <-- 新增：大屏模式状态，默认关闭
+        self.big_screen_mode = False
 
         self._update_status()
-        self._update_ui_for_big_screen_mode()  # <-- 新增：应用初始的大屏模式设置
+        self._update_ui_for_big_screen_mode()
         self._auto_select_first_serial()
 
-    # ============== 内部方法 ==============
-
     def _refresh_serial_ports(self):
-        # 尝试保留当前选择
         prev = None
         if hasattr(self, "serial_combo") and isinstance(self.serial_combo, QtWidgets.QComboBox):
             try:
@@ -492,7 +474,6 @@ class UIBase(QtWidgets.QMainWindow):
         if self.serial_combo.count() == 0:
             self.serial_combo.addItem("无可用串口", "NA")
 
-        # 恢复之前选择或应用的选择
         if prev:
             idx_prev = self.serial_combo.findData(prev)
             if idx_prev >= 0:
@@ -504,24 +485,21 @@ class UIBase(QtWidgets.QMainWindow):
                 self.serial_combo.setCurrentIndex(idx_applied)
 
     def _open_menu(self):
-        # 每次打开设置时先刷新串口列表
         self._refresh_serial_ports()
 
-        # 用“已应用”的值回填控件
         self.video_edit.setText(self.video_source or "")
         self.server_edit.setText(self.mqtt_url or "")
         if self.serial_port:
             idx = self.serial_combo.findData(self.serial_port)
             if idx >= 0:
                 self.serial_combo.setCurrentIndex(idx)
-        self.big_screen_mode_check.setChecked(self.big_screen_mode)  # <-- 新增：回填大屏模式开关状态
+        self.big_screen_mode_check.setChecked(self.big_screen_mode)
 
-        # 拍快照（用于取消恢复）
         self._menu_snapshot = {
             "serial_index": self.serial_combo.currentIndex() if hasattr(self, "serial_combo") else 0,
             "video": self.video_edit.text() if hasattr(self, "video_edit") else "",
             "server": self.server_edit.text() if hasattr(self, "server_edit") else "",
-            "big_screen_mode": self.big_screen_mode_check.isChecked(),  # <-- 新增：保存大屏模式开关快照
+            "big_screen_mode": self.big_screen_mode_check.isChecked(),
         }
         self._center_menu()
         self.menu_mask.setGeometry(0, 0, self.width(), self.height())
@@ -531,18 +509,16 @@ class UIBase(QtWidgets.QMainWindow):
         self.menu_panel.raise_()
 
     def _apply_menu(self):
-        # 将当前控件值写入“已应用配置”
         data = self.serial_combo.currentData() if hasattr(self, "serial_combo") else None
         self.serial_port = (str(data).strip()
                             if data and str(data).strip().upper() != "NA"
                             else None)
         self.video_source = self.video_edit.text().strip()
         self.mqtt_url = self.server_edit.text().strip()
-        self.big_screen_mode = self.big_screen_mode_check.isChecked()  # <-- 新增：应用大屏模式设置
+        self.big_screen_mode = self.big_screen_mode_check.isChecked()
 
-        self._update_ui_for_big_screen_mode()  # <-- 新增：应用UI变化
+        self._update_ui_for_big_screen_mode()
 
-        # 清理并关闭面板
         self._menu_snapshot = None
         self.menu_panel.hide()
         self.menu_mask.hide()
@@ -556,7 +532,7 @@ class UIBase(QtWidgets.QMainWindow):
                 pass
             self.video_edit.setText(snap["video"])
             self.server_edit.setText(snap["server"])
-            self.big_screen_mode_check.setChecked(snap["big_screen_mode"])  # <-- 新增：恢复大屏模式开关状态
+            self.big_screen_mode_check.setChecked(snap["big_screen_mode"])
         self._menu_snapshot = None
         self.menu_panel.hide()
         self.menu_mask.hide()
@@ -575,7 +551,6 @@ class UIBase(QtWidgets.QMainWindow):
 
         label_w = 90
 
-        # 串口
         row1 = QtWidgets.QWidget()
         r1 = QtWidgets.QHBoxLayout(row1)
         r1.setContentsMargins(0, 0, 0, 0)
@@ -586,7 +561,6 @@ class UIBase(QtWidgets.QMainWindow):
         self.serial_combo = QtWidgets.QComboBox(objectName="serialCombo")
         self.serial_combo.setFont(self._font_scaled(0.022))
 
-        # 覆写 showPopup：展开下拉时刷新串口列表
         orig_show = self.serial_combo.showPopup
 
         def _showPopup_refresh():
@@ -601,7 +575,6 @@ class UIBase(QtWidgets.QMainWindow):
         r1.addWidget(self.serial_combo, 1)
         layout.addWidget(row1)
 
-        # 视频流地址
         row2 = QtWidgets.QWidget()
         r2 = QtWidgets.QHBoxLayout(row2)
         r2.setContentsMargins(0, 0, 0, 0)
@@ -616,7 +589,6 @@ class UIBase(QtWidgets.QMainWindow):
         r2.addWidget(self.video_edit, 1)
         layout.addWidget(row2)
 
-        # MQTT地址
         row3 = QtWidgets.QWidget()
         r3 = QtWidgets.QHBoxLayout(row3)
         r3.setContentsMargins(0, 0, 0, 0)
@@ -631,8 +603,6 @@ class UIBase(QtWidgets.QMainWindow):
         r3.addWidget(self.server_edit, 1)
         layout.addWidget(row3)
 
-        # --- 新增代码开始 ---
-        # 大屏模式开关
         row4 = QtWidgets.QWidget()
         r4 = QtWidgets.QHBoxLayout(row4)
         r4.setContentsMargins(0, 0, 0, 0)
@@ -640,16 +610,14 @@ class UIBase(QtWidgets.QMainWindow):
         l4 = QtWidgets.QLabel("大屏模式")
         l4.setFixedWidth(label_w)
         l4.setFont(self._font_scaled(0.022))
-        self.big_screen_mode_check = ToggleSwitch(self)  # <-- 使用新的开关控件
+        self.big_screen_mode_check = ToggleSwitch(self)
         r4.addWidget(l4)
         r4.addWidget(self.big_screen_mode_check)
-        r4.addStretch(1)  # 添加一个伸缩项，让开关靠左
+        r4.addStretch(1)
         layout.addWidget(row4)
-        # --- 新增代码结束 ---
 
         layout.addStretch(1)
 
-        # 按钮
         btns = QtWidgets.QWidget()
         rb = QtWidgets.QHBoxLayout(btns)
         rb.setContentsMargins(0, 0, 0, 0)
@@ -672,7 +640,6 @@ class UIBase(QtWidgets.QMainWindow):
     def _update_bottom_panel_layout(self):
         W, H = self.width(), self.height()
 
-        # 计算两行文本的宽度，取最大值作为目标内部宽度
         text_status = self._plain_text(self.status_label1.text())
         text_armor = self._plain_text(self.status_label2.text())
         fm_status = QtGui.QFontMetrics(self.status_label1.font())
@@ -684,7 +651,7 @@ class UIBase(QtWidgets.QMainWindow):
         min_inner = 360
         max_inner = int(W * 0.40)
         target_inner_w = max(min_inner, min(max_inner, text_w))
-        panel_margin_lr = 20  # contentsMargins 左右之和（10+10）
+        panel_margin_lr = 20
         bl_w = target_inner_w + panel_margin_lr
 
         base_h = int(H * 0.11)
@@ -692,7 +659,6 @@ class UIBase(QtWidgets.QMainWindow):
 
         bl_x = int(W * 0.028)
 
-        # 将左下角状态栏整体上移一行（按状态文本的行高）
         line_h = fm_status.height()
         bl_y = H - bl_h - int(H * 0.060) - line_h
         bl_y = max(0, bl_y)
@@ -705,20 +671,14 @@ class UIBase(QtWidgets.QMainWindow):
         self.status_label2.setFixedWidth(inner_w)
 
     def _auto_select_first_serial(self):
-        """在UI启动时自动扫描并选择第一个可用的串口"""
         self.logger.info("Auto-detecting serial ports on startup...")
-        self._refresh_serial_ports()  # 填充下拉列表
+        self._refresh_serial_ports()
 
-        # 检查 QComboBox 中是否有有效项目
         if self.serial_combo.count() > 0:
             first_port_device = self.serial_combo.itemData(0)
-            # 确保它不是 "无可用串口" 的占位符 "NA"
             if first_port_device and str(first_port_device).upper() != "NA":
-                # 将选择的端口保存到实例变量中，以便程序其他部分使用
                 self.serial_port = first_port_device
                 self.logger.info(f"Automatically selected first available serial port: {self.serial_port}")
-                # 注意：我们不需要在这里设置 QComboBox 的 currentIndex，
-                # 因为 _refresh_serial_ports 方法在之后被调用时会根据 self.serial_port 的值自动恢复选择。
             else:
                 self.logger.warning("No valid serial ports found on startup.")
         else:
@@ -736,7 +696,7 @@ class UIBase(QtWidgets.QMainWindow):
             mqtt_txt = f"裁判端: <span style='color:#eaeaea;'>{self.mqtt_freq:02.0f} Hz</span>"
 
         self.status_label1.setText(f"<div style='text-align:center'>{mqtt_txt} | {video_txt}</div>")
-        
+
         if self.uart_connect_state == 0:
             uart_txt = "装甲板: <span style='color:#ff5a5a;'>串口未连接</span>"
         elif self.uart_connect_state == 1:
@@ -755,19 +715,13 @@ class UIBase(QtWidgets.QMainWindow):
 
         self._update_bottom_panel_layout()
 
-    # --- 新增方法开始 ---
     def _update_ui_for_big_screen_mode(self):
-        """根据大屏模式的设置，显示或隐藏左下角面板"""
-        if self.big_screen_mode:
-            self.bottom_left_panel.hide()
-        else:
-            self.bottom_left_panel.show()
-    # --- 新增方法结束 ---
+        """根据大屏模式的设置，显示或隐藏UI元素"""
+        is_big_screen = self.big_screen_mode
+        self.bottom_left_panel.setHidden(is_big_screen)
+        self.overlay.setCrosshairVisible(not is_big_screen)
 
     def _format_serial_label(self, device: str, desc: str) -> str:
-        """
-        若描述中已包含 'COM数字'，直接返回描述；否则：若有描述显示 '描述 (COMx)'；若无描述仅显示 'COMx'
-        """
         com = (device or "").strip()
         d = (desc or "").strip()
         if not d:
@@ -776,15 +730,12 @@ class UIBase(QtWidgets.QMainWindow):
             return d
         return f"{d} ({com})" if com else d
 
-    # ===== Qt 事件 =====
-
     def resizeEvent(self, e):
         W, H = self.width(), self.height()
         self.overlay.setGeometry(0, 0, W, H)
 
-        # 顶部 HUD
-        top_y = int(H * 0.020)  # 修改：微调Y坐标
-        top_h = int(H * 0.12)  # 修改：减小整体高度
+        top_y = int(H * 0.020)
+        top_h = int(H * 0.12)
         side_margin = int(W * 0.035)
         self.top_hud.setGeometry(
             side_margin, top_y, W - side_margin * 2, top_h)
@@ -797,36 +748,25 @@ class UIBase(QtWidgets.QMainWindow):
             w.setMaximumWidth(max_bar_w)
             w.setMinimumWidth(min_bar_w)
 
-        # 右上按钮
         btn_w, btn_h, gap = 114, 42, 10
         right_margin = int(W * 0.035)
-
-        # 计算两个按钮共享的 X 坐标
         btn_x = W - right_margin - btn_w
-
-        # “退出”按钮在上方，其 Y 坐标与顶部HUD对齐
         exit_btn_y = top_y
         self.exit_btn.setGeometry(btn_x, exit_btn_y, btn_w, btn_h)
-
-        # “设置”按钮在下方，其 Y 坐标在“退出”按钮之下，并加上一个间隙
         settings_btn_y = exit_btn_y + btn_h + gap
         self.settings_btn.setGeometry(btn_x, settings_btn_y, btn_w, btn_h)
 
-        # 左下角布局
         self._update_bottom_panel_layout()
 
-        # 设置面板与遮罩
         self._center_menu()
         self.menu_mask.setGeometry(0, 0, W, H)
 
         super().resizeEvent(e)
 
-    # ===== 工具与样式 =====
-
     def _center_menu(self):
         W, H = self.width(), self.height()
         panel_w = int(W * 0.40)
-        panel_h = int(H * 0.62)  # 适当增加高度以容纳新选项
+        panel_h = int(H * 0.62)
         self.menu_panel.setGeometry(
             (W - panel_w) // 2, (H - panel_h) // 2, panel_w, panel_h)
 
@@ -837,21 +777,12 @@ class UIBase(QtWidgets.QMainWindow):
         return f
 
     def _pick_ui_font(self):
-        # 使用静态方法 families() 直接获取字体列表
         fams = QtGui.QFontDatabase.families()
-
         prefer = [
-            "Microsoft YaHei UI",
-            "Segoe UI",
-            "PingFang SC",
-            "苹方-简",
-            "HarmonyOS Sans SC",
-            "思源黑体",
-            "Source Han Sans SC",
-            "Microsoft YaHei",
-            "微软雅黑",
+            "Microsoft YaHei UI", "Segoe UI", "PingFang SC", "苹方-简",
+            "HarmonyOS Sans SC", "思源黑体", "Source Han Sans SC",
+            "Microsoft YaHei", "微软雅黑",
         ]
-
         for p in prefer:
             if p in fams:
                 return p
@@ -891,31 +822,21 @@ class UIBase(QtWidgets.QMainWindow):
             b.setFont(fbtn)
 
     def move_to_current_screen(self):
-        """将窗口显示在当前活动屏幕上"""
         cursor_pos = QtGui.QCursor.pos()
         screen = QtWidgets.QApplication.screenAt(cursor_pos)
-
-        # 获取屏幕的几何信息
         screen_geometry = screen.availableGeometry()
-
-        # 计算窗口居中位置
         x = screen_geometry.x() + (screen_geometry.width() - self.width()) // 2
         y = screen_geometry.y() + (screen_geometry.height() - self.height()) // 2
-
-        # 移动窗口到指定位置
         self.move(x, y)
 
     def loop(self, resize=None):
         if resize is None:
-            # 全屏显示
             self.move_to_current_screen()
             self.showFullScreen()
         else:
             self.resize(*resize)
             self.move_to_current_screen()
             self.showNormal()
-            # ui.showMaximized()
-
         self.app.exec()
 
 
@@ -923,46 +844,37 @@ class UI(UIBase):
     def __init__(self, level=logging.WARNING):
         super().__init__(level)
 
-        # bgm播放
         self.media_player = QMediaPlayer()
         self.audio_output = QAudioOutput()
         self.media_player.setAudioOutput(self.audio_output)
         self.media_player.setSource(QUrl.fromLocalFile(get_resource("./assets/bgm.mp3")))
-        self.audio_output.setVolume(1.0)  # 设置音量（0.0 - 1.0）
+        self.audio_output.setVolume(1.0)
         self.bgm_start_time = None
 
-        # 键鼠采样相关
         self._last_mouse_time = time.perf_counter()
-        self._wheel_accum = 0.0  # 累积滚轮“档位”（120为一档 -> 累加为 1.0）
+        self._wheel_accum = 0.0
         self._key_state = {
             "w": False, "s": False, "a": False, "d": False,
-            "q": False, "e": False,
-            "shift": False, "ctrl": False
+            "q": False, "e": False, "shift": False, "ctrl": False
         }
-        self._dbus_packet = bytes(10)  # 最新采样的输入数据包（10字节）；初始为全零
+        self._dbus_packet = bytes(10)
 
-        # 初始隐藏鼠标并居中
         self._cursor_shown = False
         self.setCursor(QtCore.Qt.BlankCursor)
 
-        # 输入事件过滤与定时采样
         QtWidgets.QApplication.instance().installEventFilter(self)
         self._input_timer = QtCore.QTimer(self)
-        self._input_timer.setInterval(10)  # 100 Hz
+        self._input_timer.setInterval(10)
         self._input_timer.timeout.connect(self._sample_input)
         self._input_timer.start()
 
-    # ============== 公共 API ==============
-
     def set_red_name(self, name: str):
-        """设置红方队伍名称"""
         if name is None:
             return
         self.red_name_label.setText(name)
         self.red_name_label.setAlignment(QtCore.Qt.AlignCenter)
 
     def set_blue_name(self, name: str):
-        """设置蓝方队伍名称"""
         if name is None:
             return
         self.blue_name_label.setText(name)
@@ -971,31 +883,19 @@ class UI(UIBase):
     def set_frame(self, frame_bgr: np.ndarray):
         if frame_bgr is None:
             return
-
         h, w = frame_bgr.shape[:2]
         qimg = QtGui.QImage(frame_bgr.data, w, h, 3 * w, QtGui.QImage.Format_BGR888)
-
-        # 动态获取当前窗口或标签的大小
-        target = self.bg_label.size()  # 或者使用 self.size() 获取整个窗口大小
+        target = self.bg_label.size()
         if target.width() == 0 or target.height() == 0:
             return
-
-        # 缩放图像（保持宽高比，可能小于目标尺寸，空余部分填充黑色）
         qimg_scaled = qimg.scaled(target, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
-
-        # 创建与目标尺寸相同的黑色背景图像
         final_image = QtGui.QImage(target.width(), target.height(), QtGui.QImage.Format_RGB888)
         final_image.fill(QtCore.Qt.black)
-
-        # 计算居中位置
         x_offset = (target.width() - qimg_scaled.width()) // 2
         y_offset = (target.height() - qimg_scaled.height()) // 2
-
-        # 在黑色背景上绘制居中后的缩放图像
         painter = QtGui.QPainter(final_image)
         painter.drawImage(x_offset, y_offset, qimg_scaled)
         painter.end()
-
         self.bg_label.setPixmap(QtGui.QPixmap.fromImage(final_image))
 
     def set_video_fps(self, fps):
@@ -1007,14 +907,13 @@ class UI(UIBase):
             self.media_player.stop()
             self.bgm_start_time = None
             return
-        
+
         seconds_int = int(round(seconds))
         bgm_start_time = self.bgm_start_time
         if seconds_int >= 0:
             m, s = seconds_int // 60, seconds_int % 60
             self.countdown_banner.set_text(f"{m}:{s:02d}")
             self.countdown_banner.set_warning(seconds <= 10)
-            # bgm
             if seconds == 0:
                 self.media_player.stop()
                 self.bgm_start_time = None
@@ -1022,15 +921,13 @@ class UI(UIBase):
             else:
                 bgm_start_time = time.time() - 120 - (180 - seconds)
         else:
-            # 显示负值，例如：-1:30 表示负1分30秒
             abs_seconds = abs(seconds_int)
             m, s = abs_seconds // 60, abs_seconds % 60
             self.countdown_banner.set_text(f"-{m}:{s:02d}")
             self.countdown_banner.set_warning(False)
-            # bgm
             bgm_start_time = time.time() - (120 - -seconds)
 
-        if self.bgm_start_time is None or abs(bgm_start_time - self.bgm_start_time) > 2:  # 最大允许bgm 2秒误差
+        if self.bgm_start_time is None or abs(bgm_start_time - self.bgm_start_time) > 0.5:
             position = time.time() - bgm_start_time
             if position < 300:
                 self.media_player.setPosition(int(round(position * 1000)))
@@ -1071,17 +968,10 @@ class UI(UIBase):
     def set_center_txt(self, line1: str, line2: str, color="white"):
         self.overlay.set_center_text(line1, line2, color)
 
-    def get_serial_port(self) -> str | None:
-        return self.serial_port
-
-    def get_video_source(self) -> str | None:
-        return self.video_source
-
-    def get_mqtt_url(self) -> str | None:
-        return self.mqtt_url
-
-    def get_dbus_packet(self) -> bytes:
-        return self._dbus_packet
+    def get_serial_port(self) -> str | None: return self.serial_port
+    def get_video_source(self) -> str | None: return self.video_source
+    def get_mqtt_url(self) -> str | None: return self.mqtt_url
+    def get_dbus_packet(self) -> bytes: return self._dbus_packet
 
     def trigger_hit(self):
         if self.hit_anim.state() == QtCore.QAbstractAnimation.Running:
@@ -1089,18 +979,11 @@ class UI(UIBase):
         self.overlay.setHitProgress(0.0)
         self.hit_anim.start()
 
-    # ============== 键鼠指令相关 ==============
-
     def _set_key_state(self, key, down: bool):
         m = {
-            QtCore.Qt.Key_W: "w",
-            QtCore.Qt.Key_S: "s",
-            QtCore.Qt.Key_A: "a",
-            QtCore.Qt.Key_D: "d",
-            QtCore.Qt.Key_Q: "q",
-            QtCore.Qt.Key_E: "e",
-            QtCore.Qt.Key_Shift: "shift",
-            QtCore.Qt.Key_Control: "ctrl",
+            QtCore.Qt.Key_W: "w", QtCore.Qt.Key_S: "s", QtCore.Qt.Key_A: "a",
+            QtCore.Qt.Key_D: "d", QtCore.Qt.Key_Q: "q", QtCore.Qt.Key_E: "e",
+            QtCore.Qt.Key_Shift: "shift", QtCore.Qt.Key_Control: "ctrl",
         }
         name = m.get(key)
         if name:
@@ -1108,7 +991,6 @@ class UI(UIBase):
 
     @classmethod
     def _map_to_i16(cls, val: float, max_val: float) -> int:
-        """将值按最大值映射到int16范围[-32768, 32767]"""
         if val > max_val:
             return 32767
         if val < -max_val:
@@ -1117,24 +999,15 @@ class UI(UIBase):
 
     @classmethod
     def _build_dbus_packet(cls, dx: float, dy: float, dz: float, left_pressed: bool, right_pressed: bool, key_state) -> bytes:
-        """
-        构造10字节数据包（小端序）
-        """
         x16 = cls._map_to_i16(dx, INPUT_MAX_DX)
         y16 = cls._map_to_i16(dy, INPUT_MAX_DY)
         z16 = cls._map_to_i16(dz, INPUT_MAX_DZ)
-
         key_byte = (
-            (1 if key_state["w"] else 0) << 0 |
-            (1 if key_state["s"] else 0) << 1 |
-            (1 if key_state["a"] else 0) << 2 |
-            (1 if key_state["d"] else 0) << 3 |
-            (1 if key_state["q"] else 0) << 4 |
-            (1 if key_state["e"] else 0) << 5 |
-            (1 if key_state["shift"] else 0) << 6 |
-            (1 if key_state["ctrl"] else 0) << 7
+            (1 if key_state["w"] else 0) << 0 | (1 if key_state["s"] else 0) << 1 |
+            (1 if key_state["a"] else 0) << 2 | (1 if key_state["d"] else 0) << 3 |
+            (1 if key_state["q"] else 0) << 4 | (1 if key_state["e"] else 0) << 5 |
+            (1 if key_state["shift"] else 0) << 6 | (1 if key_state["ctrl"] else 0) << 7
         )
-
         packet = bytearray(10)
         packet[0] = x16 & 0xFF
         packet[1] = (x16 >> 8) & 0xFF
@@ -1146,110 +1019,80 @@ class UI(UIBase):
         packet[7] = 0x01 if right_pressed else 0x00
         packet[8] = key_byte & 0xFF
         packet[9] = 0x01
-
         return bytes(packet)
 
     def _sample_input(self):
-        # 每次采样的时候都判断下是否失去焦点
         if not self.isActiveWindow():
             if not self._cursor_shown:
                 self._cursor_shown = True
-                # 显示光标
                 self.setCursor(QtCore.Qt.ArrowCursor)
-                # 启用按钮
                 self.exit_btn.setEnabled(True)
                 self.settings_btn.setEnabled(True)
 
-        # 光标显示时：dbus报文置零
         if self._cursor_shown:
             self._last_mouse_time = time.perf_counter()
             self._wheel_accum = 0.0
             self._dbus_packet = bytes(10)
             return
 
-        # 计算dt
         now_time = time.perf_counter()
         dt = now_time - self._last_mouse_time
         if dt <= 0:
             return
 
-        # 获取画面中心坐标
-        center = self.mapToGlobal(QtCore.QPoint(
-            self.width() // 2, self.height() // 2))
-        center_x = center.x()
-        center_y = center.y()
-
-        # 计算鼠标 x y z速度
+        center = self.mapToGlobal(QtCore.QPoint(self.width() // 2, self.height() // 2))
         pos = QtGui.QCursor.pos()
-        vx = (pos.x() - center_x) / dt
-        vy = (pos.y() - center_y) / dt
+        vx = (pos.x() - center.x()) / dt
+        vy = (pos.y() - center.y()) / dt
         vz = self._wheel_accum / dt
-        # print(f"{vx=:.0f} {vy=:.0f} {vz=:.0f}")
+        QtGui.QCursor.setPos(center)
 
-        # 将鼠标重置到屏幕中心
-        QtGui.QCursor.setPos(center_x, center_y)
-
-        # 鼠标左右键按下
         buttons = QtWidgets.QApplication.mouseButtons()
         left_pressed = bool(buttons & QtCore.Qt.LeftButton)
         right_pressed = bool(buttons & QtCore.Qt.RightButton)
 
         self._dbus_packet = self._build_dbus_packet(
             vx, vy, vz, left_pressed, right_pressed, self._key_state)
-        # def _packet_hex(data: bytes) -> str:
-        #     return " ".join(f"{b:02X}" for b in data)
-        # print(_packet_hex(self._dbus_packet))
 
         self._last_mouse_time = now_time
         self._wheel_accum = 0.0
 
-    # ===== Qt 事件 =====
-
     def eventFilter(self, obj, event):
-        if event.type() == QtCore.QEvent.Wheel:  # 鼠标滚轮
+        if event.type() == QtCore.QEvent.Wheel:
             self._wheel_accum += event.angleDelta().y() / 120.0
-        elif event.type() == QtCore.QEvent.KeyPress and not event.isAutoRepeat():  # 按键按下
+        elif event.type() == QtCore.QEvent.KeyPress and not event.isAutoRepeat():
             self._set_key_state(event.key(), True)
-        elif event.type() == QtCore.QEvent.KeyRelease and not event.isAutoRepeat():  # 按键释放
+        elif event.type() == QtCore.QEvent.KeyRelease and not event.isAutoRepeat():
             self._set_key_state(event.key(), False)
         return super().eventFilter(obj, event)
 
     def keyPressEvent(self, e):
-        if e.key() == QtCore.Qt.Key_Escape:  # 按下Esc
+        if e.key() == QtCore.Qt.Key_Escape:
             if not self._cursor_shown:
                 self._cursor_shown = True
-                # 显示光标
                 self.setCursor(QtCore.Qt.ArrowCursor)
-                # 启用按钮
                 self.exit_btn.setEnabled(True)
                 self.settings_btn.setEnabled(True)
         super().keyPressEvent(e)
 
     def changeEvent(self, event):
-        if event.type() == event.Type.ActivationChange and not self.isActiveWindow():  # 失去焦点
+        if event.type() == event.Type.ActivationChange and not self.isActiveWindow():
             if not self._cursor_shown:
                 self._cursor_shown = True
-                # 显示光标
                 self.setCursor(QtCore.Qt.ArrowCursor)
-                # 启用按钮
                 self.exit_btn.setEnabled(True)
                 self.settings_btn.setEnabled(True)
         super().changeEvent(event)
 
     def mousePressEvent(self, e):
-        # 点击画面自动隐藏光标，仅在未打开设置时生效
         if not self.menu_panel.isVisible():
             if self._cursor_shown:
                 self._cursor_shown = False
-                # 隐藏光标
                 self.setCursor(QtCore.Qt.BlankCursor)
-                # 光标居中
                 center = self.mapToGlobal(QtCore.QPoint(self.width() // 2, self.height() // 2))
                 QtGui.QCursor.setPos(center)
-                # 禁用按钮
                 self.exit_btn.setEnabled(False)
                 self.settings_btn.setEnabled(False)
-
         super().mousePressEvent(e)
 
 # ================== 测试代码（main） ==================
