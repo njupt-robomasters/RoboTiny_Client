@@ -70,6 +70,8 @@ class Video(threading.Thread):
                 self.frame = frame
             self._update_fps()
         except Exception as e:
+            if e.errno == 1094995529:
+                return
             self.logger.error(f"读取视频流报错: {e}")
             self._reset()
             return
@@ -100,8 +102,9 @@ if __name__ == "__main__":
 
     video = Video(logging.INFO)
     video.start()
-    source = "rtsp://192.168.1.1:7070/webcam"
+    # source = "rtsp://192.168.1.1:7070/webcam"
     # source = "video=Integrated Camera"
+    source = "video=USB Video"
     video.set_source(source)
 
     while True:
